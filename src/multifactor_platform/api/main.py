@@ -10,6 +10,21 @@ settings = get_settings()
 app = FastAPI(title=settings.app_name)
 
 
+@app.get("/")
+def root() -> dict:
+    return {
+        "name": settings.app_name,
+        "docs": "/docs",
+        "health": "/health",
+        "endpoints": [
+            "/rankings/latest",
+            "/portfolio/latest",
+            "/backtests",
+            "/stocks/{ticker}/features",
+        ],
+    }
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}

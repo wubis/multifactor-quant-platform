@@ -10,3 +10,13 @@ def test_health_endpoint():
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_root_endpoint_lists_entry_points():
+    client = TestClient(app)
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert response.json()["docs"] == "/docs"
+    assert "/rankings/latest" in response.json()["endpoints"]
