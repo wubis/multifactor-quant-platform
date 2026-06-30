@@ -1,4 +1,4 @@
-# Multifactor Stock Ranking Platform
+# Multifactor Equity Ranking Platform
 
 Production-style platform for ingesting equity data, computing stock factors, ranking stocks, backtesting portfolio rules, and serving results through an API/dashboard.
 
