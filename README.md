@@ -2,7 +2,7 @@
 
 An end-to-end platform for ranking U.S. large-cap stocks using financial factors, testing the ranking strategy historically, persisting results, and serving everything through an API and dashboard.
 
-This project is built to look and behave like a small production research platform, not just a notebook. It includes data ingestion, feature engineering, factor scoring, backtesting, persistence, command-line jobs, data-quality reporting, a FastAPI backend, and a React dashboard.
+This project is built to behave like a small production research platform. It includes data ingestion, feature engineering, factor scoring, backtesting, persistence, command-line jobs, data-quality reporting, a FastAPI backend, and a React dashboard.
 
 ## What It Does
 
