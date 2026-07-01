@@ -68,3 +68,17 @@ def test_backtest_detail_exposes_benchmark_cost_and_risk_series():
     assert body["costs"]
     assert body["sector_exposure"]
     assert body["rebalance_log"]
+
+
+def test_models_endpoint_runs_walk_forward_models_offline():
+    client = TestClient(app)
+
+    response = client.get("/models?source=sample")
+
+    assert response.status_code == 200
+    body = response.json()
+    names = {row["name"] for row in body["models"]}
+    assert {"Weighted Score", "Linear Regression", "Elastic Net", "Random Forest", "Gradient Boosting"}.issubset(names)
+    linear = next(row for row in body["models"] if row["name"] == "Linear Regression")
+    assert linear["fold_count"] > 0
+    assert linear["rank_ic"] is not None

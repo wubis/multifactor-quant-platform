@@ -8,6 +8,7 @@ from multifactor_platform.backtesting.engine import run_top_n_backtest
 from multifactor_platform.config import get_settings
 from multifactor_platform.data_quality import report_to_dict, validate_price_history
 from multifactor_platform.db.persistence import database_status, persist_pipeline_snapshot
+from multifactor_platform.models.ml import evaluate_models
 from multifactor_platform.optimization.constraints import PortfolioConstraints
 from multifactor_platform.optimization.optimizer import optimize_ranked_portfolio
 from multifactor_platform.utils.platform_data import DataSource, load_platform_data
@@ -262,12 +263,39 @@ def optimized_portfolio(
 
 @app.get("/models")
 def models(source: DataSource = "sample"):
+    _, features, _ = _load_data_or_503(source)
+    results = evaluate_models(features)
     return {
         "source": source,
         "models": [
-            {"name": "Weighted Score", "rank_ic": None, "sharpe": None, "status": "Active"},
-            {"name": "Elastic Net", "rank_ic": None, "sharpe": None, "status": "Planned"},
-            {"name": "XGBoost", "rank_ic": None, "sharpe": None, "status": "Planned"},
+            {
+                "name": result["name"],
+                "engine": result["engine"],
+                "status": result["status"],
+                "feature_count": result["feature_count"],
+                "fold_count": len(result["folds"]),
+                **result["metrics"],
+            }
+            for result in results
+        ],
+    }
+
+
+@app.get("/models/walk-forward")
+def model_walk_forward(source: DataSource = "sample"):
+    _, features, _ = _load_data_or_503(source)
+    results = evaluate_models(features)
+    return {
+        "source": source,
+        "models": [
+            {
+                "name": result["name"],
+                "engine": result["engine"],
+                "status": result["status"],
+                "metrics": result["metrics"],
+                "folds": _json_records(result["folds"]),
+            }
+            for result in results
         ],
     }
 

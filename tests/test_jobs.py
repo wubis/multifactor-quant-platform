@@ -1,4 +1,5 @@
 from multifactor_platform.jobs.compute_features import run as run_compute_features
+from multifactor_platform.jobs.evaluate_models import run as run_evaluate_models
 from multifactor_platform.jobs.ingest_prices import run as run_ingest_prices
 from multifactor_platform.jobs.run_backtest import run as run_backtest
 
@@ -24,3 +25,11 @@ def test_run_backtest_job_returns_metrics():
 
     assert result["periods"] > 0
     assert "sharpe" in result["metrics"]
+
+
+def test_evaluate_models_job_returns_walk_forward_results():
+    result = run_evaluate_models("sample")
+
+    assert result["source"] == "sample"
+    assert result["models"]
+    assert any(model["name"] == "Linear Regression" for model in result["models"])

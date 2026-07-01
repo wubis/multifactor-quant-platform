@@ -48,13 +48,14 @@ The default live demo uses `yfinance`. The deterministic `sample` source is kept
 - Momentum, volatility, beta, value, quality, size, and liquidity features
 - Cross-sectional normalization by date
 - Weighted multifactor ranking model
+- ML ranking models with walk-forward validation
 - Monthly top-N equal-weight backtester with delayed rebalancing
 - Explicit commission and slippage cost modeling
 - Metrics including CAGR, Sharpe, volatility, max drawdown, win rate, turnover, alpha, tracking error, and information ratio
 - Constrained portfolio optimizer with max position, sector exposure, turnover, and cash controls
 - SQLite persistence for securities, prices, fundamentals, features, predictions, and backtest summaries
 - FastAPI backend with interactive docs
-- React dashboard with rankings, factor charts, strategy-vs-SPY equity curves, turnover, costs, and sector exposure history
+- React dashboard with rankings, factor charts, model comparison, strategy-vs-SPY equity curves, turnover, costs, and sector exposure history
 - Command-line jobs for repeatable pipeline execution
 - GitHub Actions CI and scheduled sample ETL workflow
 - Tests for factors, ranking, backtesting, API routes, jobs, and persistence
@@ -96,7 +97,7 @@ composite_score =
 + 0.10 * liquidity_score
 ```
 
-This is deliberately simple. A transparent baseline makes it easier to debug the data, understand rankings, and compare future machine-learning models against something interpretable.
+This is deliberately simple. A transparent baseline makes it easier to debug the data, understand rankings, and compare machine-learning models against something interpretable.
 
 Implemented factor families:
 
@@ -105,6 +106,27 @@ Implemented factor families:
 - **Value**: PE, PB, EV/EBITDA, free cash flow yield
 - **Quality**: ROE, gross margin, debt/equity, earnings stability
 - **Size/Liquidity**: market cap and dollar volume
+
+## Machine Learning Models
+
+The ML layer predicts each stock's next 21-trading-day return relative to the universe average. That target asks a practical ranking question: "Which stocks are likely to outperform the rest of the available universe over the next month?"
+
+Implemented models:
+
+- **Linear Regression**: a simple linear baseline that shows whether factors have stable directional relationships with forward returns
+- **Elastic Net**: a regularized linear model that can shrink noisy factor weights and reduce overfitting
+- **Random Forest**: a tree ensemble that can capture nonlinear relationships between factors
+- **Gradient Boosting**: uses XGBoost if installed, LightGBM if installed, and otherwise falls back to scikit-learn histogram gradient boosting
+
+Validation uses a walk-forward setup. The model trains on earlier dates, validates on a later window, then rolls forward and repeats. This better matches how a trading model would be used in production because future data is never included in training.
+
+Model diagnostics include:
+
+- Rank IC: Spearman correlation between predicted ranking and realized future relative return
+- Hit rate: share of predictions with the correct positive/negative direction
+- RMSE and MAE: prediction error magnitude
+- R2: regression fit on the validation windows
+- Fold count: number of walk-forward validation windows
 
 ## Backtesting
 
@@ -201,6 +223,8 @@ GET  /portfolio/latest?source=yfinance
 GET  /portfolio/optimized?source=yfinance
 GET  /backtests?source=yfinance
 GET  /backtests/yfinance-top-10?source=yfinance
+GET  /models?source=yfinance
+GET  /models/walk-forward?source=yfinance
 GET  /stocks/AAPL/features?source=yfinance
 GET  /data-quality/report?source=yfinance
 GET  /persistence/status
@@ -217,6 +241,7 @@ Jobs make the pipeline repeatable without relying on dashboard clicks.
 python -m multifactor_platform.jobs.ingest_prices --source sample
 python -m multifactor_platform.jobs.compute_features --source sample
 python -m multifactor_platform.jobs.run_backtest --source sample --top-n 10
+python -m multifactor_platform.jobs.evaluate_models --source sample
 python -m multifactor_platform.jobs.persist_snapshot --source sample
 python -m multifactor_platform.jobs.db_status
 ```
@@ -227,6 +252,7 @@ After `pip install -e ".[dev]"`, shorter aliases are available:
 mfp-ingest-prices --source sample
 mfp-compute-features --source sample
 mfp-run-backtest --source sample --top-n 10
+mfp-evaluate-models --source sample
 mfp-persist-snapshot --source sample
 mfp-db-status
 ```
@@ -285,14 +311,14 @@ Current limitations:
 - yfinance is not point-in-time or institutionally auditable
 - delisted stocks are not handled yet
 - transaction cost and slippage models are explicit but still simplified
-- ML models are placeholders for later phases
+- ML models use compact factor features and require stronger research before investment use
 - portfolio optimization is deterministic and constraint-based, not yet a full risk-model optimizer
 
 ## Next Steps
 
 - Add point-in-time fundamentals from a professional data vendor
 - Store universe membership by date to reduce survivorship bias
-- Implement Elastic Net and tree-based ranking models
-- Add walk-forward validation and model comparison
+- Persist trained model artifacts and walk-forward prediction sets
+- Add richer feature selection and hyperparameter search
 - Add covariance/risk-model-aware portfolio optimization
 - Add artifact uploads for scheduled ETL outputs

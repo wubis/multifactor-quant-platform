@@ -77,8 +77,14 @@ type Portfolio = {
 
 type ModelRow = {
   name: string;
+  engine: string;
   rank_ic: number | null;
-  sharpe: number | null;
+  rank_ic_std: number | null;
+  hit_rate: number | null;
+  rmse: number | null;
+  r2: number | null;
+  fold_count: number;
+  feature_count: number;
   status: string;
 };
 
@@ -358,14 +364,25 @@ function ModelsView({ models }: { models: ModelRow[] }) {
       <h2>Model Comparison</h2>
       <table>
         <thead>
-          <tr><th>Model</th><th>Rank IC</th><th>Sharpe</th><th>Status</th></tr>
+          <tr>
+            <th>Model</th>
+            <th>Engine</th>
+            <th>Rank IC</th>
+            <th>Hit Rate</th>
+            <th>RMSE</th>
+            <th>Folds</th>
+            <th>Status</th>
+          </tr>
         </thead>
         <tbody>
           {models.map((model) => (
             <tr key={model.name}>
               <td>{model.name}</td>
+              <td>{model.engine}</td>
               <td>{model.rank_ic === null ? "n/a" : formatNumber(model.rank_ic, 3)}</td>
-              <td>{model.sharpe === null ? "n/a" : formatNumber(model.sharpe)}</td>
+              <td>{model.hit_rate === null ? "n/a" : formatPercent(model.hit_rate)}</td>
+              <td>{model.rmse === null ? "n/a" : formatNumber(model.rmse, 4)}</td>
+              <td>{model.fold_count}</td>
               <td><span className="status-pill">{model.status}</span></td>
             </tr>
           ))}

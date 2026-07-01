@@ -27,6 +27,9 @@ jobs:
       - name: Compute sample features
         run: python -m multifactor_platform.jobs.compute_features --source sample
 
+      - name: Evaluate sample ML models
+        run: python -m multifactor_platform.jobs.evaluate_models --source sample
+
       - name: Run sample backtest
         run: python -m multifactor_platform.jobs.run_backtest --source sample --top-n 10
 
