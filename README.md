@@ -50,10 +50,12 @@ The default live demo uses `yfinance`. The deterministic `sample` source is kept
 - Weighted multifactor ranking model
 - Monthly top-N equal-weight backtester
 - Metrics including CAGR, Sharpe, volatility, max drawdown, win rate, and turnover
+- Constrained portfolio optimizer with max position, sector exposure, turnover, and cash controls
 - SQLite persistence for securities, prices, fundamentals, features, predictions, and backtest summaries
 - FastAPI backend with interactive docs
 - React dashboard with rankings, factor charts, equity curve, monthly returns, and sector exposure
 - Command-line jobs for repeatable pipeline execution
+- GitHub Actions CI and scheduled sample ETL workflow
 - Tests for factors, ranking, backtesting, API routes, jobs, and persistence
 
 ## Architecture
@@ -66,6 +68,7 @@ Data Sources
   -> Feature Store Tables
   -> Ranking Model
   -> Backtester
+  -> Portfolio Optimizer
   -> Persistence Layer
   -> FastAPI Backend
   -> React Dashboard
@@ -77,6 +80,7 @@ Important implementation choices:
 - **SQLAlchemy** defines the database models and supports local SQLite by default.
 - **React + Recharts** powers the dashboard and visual analytics.
 - **Command-line jobs** make the pipeline runnable outside the dashboard/API.
+- **GitHub Actions** runs tests, dashboard builds, and a scheduled sample ETL workflow.
 
 ## Factor Model
 
@@ -185,6 +189,7 @@ http://localhost:5173
 GET  /health
 GET  /rankings/latest?source=yfinance
 GET  /portfolio/latest?source=yfinance
+GET  /portfolio/optimized?source=yfinance
 GET  /backtests?source=yfinance
 GET  /backtests/yfinance-top-10?source=yfinance
 GET  /stocks/AAPL/features?source=yfinance
@@ -236,6 +241,15 @@ Persisted tables:
 
 Docker can override the database URL to use PostgreSQL.
 
+## CI And Scheduled Jobs
+
+The repository includes GitHub Actions workflows:
+
+- `.github/workflows/ci.yml`: installs Python and Node dependencies, runs the Python test suite, and builds the dashboard.
+- `.github/workflows/nightly-etl.yml`: runs the sample ingestion, feature computation, backtest, persistence, and DB status jobs on a schedule or manual trigger.
+
+The scheduled workflow intentionally uses `source=sample` so CI remains deterministic and does not fail because of transient yfinance/network issues.
+
 ## Testing
 
 The test suite covers the highest-risk parts of the platform:
@@ -263,7 +277,7 @@ Current limitations:
 - delisted stocks are not handled yet
 - transaction cost and slippage models are simplified
 - ML models are placeholders for later phases
-- portfolio optimization is not fully implemented yet
+- portfolio optimization is deterministic and constraint-based, not yet a full risk-model optimizer
 
 ## Next Steps
 
@@ -272,5 +286,5 @@ Current limitations:
 - Add rebalance delay and stronger transaction-cost modeling
 - Implement Elastic Net and tree-based ranking models
 - Add walk-forward validation and model comparison
-- Add constrained portfolio optimization
-- Add CI and scheduled nightly ETL
+- Add covariance/risk-model-aware portfolio optimization
+- Add artifact uploads for scheduled ETL outputs

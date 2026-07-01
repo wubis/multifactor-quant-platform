@@ -9,6 +9,8 @@ from multifactor_platform.backtesting.engine import run_top_n_backtest
 from multifactor_platform.config import get_settings
 from multifactor_platform.data_quality import report_to_dict, validate_price_history
 from multifactor_platform.db.persistence import database_status, persist_pipeline_snapshot
+from multifactor_platform.optimization.constraints import PortfolioConstraints
+from multifactor_platform.optimization.optimizer import optimize_ranked_portfolio
 from multifactor_platform.utils.platform_data import DataSource, load_platform_data
 
 settings = get_settings()
@@ -52,6 +54,7 @@ def root() -> dict:
         "endpoints": [
             "/rankings/latest?source=yfinance",
             "/portfolio/latest?source=yfinance",
+            "/portfolio/optimized?source=yfinance",
             "/backtests?source=yfinance",
             "/stocks/{ticker}/features?source=yfinance",
             "/data-quality/report?source=yfinance",
@@ -181,6 +184,38 @@ def latest_portfolio(limit: int = 10, source: DataSource = "sample"):
         "date": latest_date.date().isoformat(),
         "positions": _json_records(rows, ["ticker", "sector", "rank", "weight", "composite_score"]),
         "sector_exposure": _json_records(sector_exposure),
+    }
+
+
+@app.get("/portfolio/optimized")
+def optimized_portfolio(
+    source: DataSource = "sample",
+    candidate_limit: int = 50,
+    max_position_size: float = 0.05,
+    max_sector_exposure: float = 0.25,
+    cash_minimum: float = 0.02,
+):
+    _, _, rankings = _load_data_or_503(source)
+    latest_date = rankings["date"].max()
+    latest = rankings.loc[rankings["date"] == latest_date].copy()
+    result = optimize_ranked_portfolio(
+        latest,
+        constraints=PortfolioConstraints(
+            max_position_size=max_position_size,
+            max_sector_exposure=max_sector_exposure,
+            cash_minimum=cash_minimum,
+        ),
+        candidate_limit=candidate_limit,
+    )
+    return {
+        "source": source,
+        "date": latest_date.date().isoformat(),
+        "positions": _json_records(result["positions"]),
+        "sector_exposure": _json_records(result["sector_exposure"]),
+        "cash_weight": result["cash_weight"],
+        "invested_weight": result["invested_weight"],
+        "turnover": result["turnover"],
+        "constraints": result["constraints"],
     }
 
 

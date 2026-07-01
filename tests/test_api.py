@@ -40,3 +40,14 @@ def test_data_quality_endpoint_runs_offline():
     assert response.status_code == 200
     assert response.json()["row_count"] > 0
     assert "warnings" in response.json()
+
+
+def test_optimized_portfolio_endpoint_runs_offline():
+    client = TestClient(app)
+
+    response = client.get("/portfolio/optimized?source=sample&candidate_limit=20")
+
+    assert response.status_code == 200
+    assert response.json()["source"] == "sample"
+    assert response.json()["positions"]
+    assert response.json()["cash_weight"] >= 0

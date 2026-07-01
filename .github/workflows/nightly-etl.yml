@@ -1,0 +1,37 @@
+name: Nightly Sample ETL
+
+on:
+  schedule:
+    - cron: "17 8 * * *"
+  workflow_dispatch:
+
+jobs:
+  sample-pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: python -m pip install -e ".[dev]"
+
+      - name: Run sample data quality job
+        run: python -m multifactor_platform.jobs.ingest_prices --source sample
+
+      - name: Compute sample features
+        run: python -m multifactor_platform.jobs.compute_features --source sample
+
+      - name: Run sample backtest
+        run: python -m multifactor_platform.jobs.run_backtest --source sample --top-n 10
+
+      - name: Persist sample snapshot
+        run: python -m multifactor_platform.jobs.persist_snapshot --source sample --database-url sqlite:///data/processed/nightly.db
+
+      - name: Show database status
+        run: python -m multifactor_platform.jobs.db_status --database-url sqlite:///data/processed/nightly.db
