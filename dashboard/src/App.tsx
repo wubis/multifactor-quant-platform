@@ -236,7 +236,7 @@ function RankingsTable({ rankings }: { rankings: Ranking[] }) {
   );
 }
 
-function BacktestsView({ detail }: { detail?: BacktestDetail }) {
+function BacktestsView({ backtests, detail }: { backtests: Backtest[]; detail?: BacktestDetail }) {
   const chartRows = buildBacktestRows(detail);
   const turnoverRows = (detail?.turnover || []).map((row) => ({
     date: row.date,
@@ -253,7 +253,27 @@ function BacktestsView({ detail }: { detail?: BacktestDetail }) {
   return (
     <div className="panel-grid">
       <section className="panel wide-panel">
-        <h2>Strategy vs SPY</h2>
+        <h2>Strategy Comparison</h2>
+        <table>
+          <thead>
+            <tr><th>Strategy</th><th>CAGR</th><th>SPY CAGR</th><th>Alpha</th><th>Sharpe</th><th>Info Ratio</th></tr>
+          </thead>
+          <tbody>
+            {backtests.map((row) => (
+              <tr key={row.id}>
+                <td>{row.name}</td>
+                <td>{formatPercent(row.metrics.cagr)}</td>
+                <td>{formatPercent(row.metrics.benchmark_cagr)}</td>
+                <td>{formatPercent(row.metrics.alpha)}</td>
+                <td>{formatNumber(row.metrics.sharpe)}</td>
+                <td>{formatNumber(row.metrics.information_ratio)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+      <section className="panel wide-panel">
+        <h2>{detail?.name || "Selected Strategy"} vs SPY</h2>
         <div className="chart">
           <ResponsiveContainer width="100%" height="100%">
             <RechartsLineChart data={chartRows}>
@@ -439,7 +459,8 @@ function App() {
   const [view, setView] = useState<View>("overview");
   const [source, setSource] = useState<DataSource>("yfinance");
   const [rankings, setRankings] = useState<Ranking[]>([]);
-  const [backtest, setBacktest] = useState<Backtest | undefined>();
+  const [backtests, setBacktests] = useState<Backtest[]>([]);
+  const [selectedBacktestId, setSelectedBacktestId] = useState<string | undefined>();
   const [backtestDetail, setBacktestDetail] = useState<BacktestDetail | undefined>();
   const [portfolio, setPortfolio] = useState<Portfolio | undefined>();
   const [models, setModels] = useState<ModelRow[]>([]);
@@ -473,7 +494,10 @@ function App() {
       ]);
 
       setRankings(rankingResponse.rankings);
-      setBacktest(backtestResponse[0]);
+      setBacktests(backtestResponse);
+      setSelectedBacktestId((current) => (
+        backtestResponse.some((row) => row.id === current) ? current : backtestResponse[0]?.id
+      ));
       setPortfolio(portfolioResponse);
       setModels(modelResponse.models);
       setPersistence(persistenceResponse);
@@ -503,13 +527,21 @@ function App() {
     loadDashboard();
   }, [source]);
 
-  const metrics = useMemo(() => backtestDetail?.metrics || backtest?.metrics, [backtest, backtestDetail]);
+  const selectedBacktest = useMemo(
+    () => backtests.find((row) => row.id === selectedBacktestId) || backtests[0],
+    [backtests, selectedBacktestId],
+  );
+  const metrics = useMemo(
+    () => backtestDetail?.metrics || selectedBacktest?.metrics,
+    [selectedBacktest, backtestDetail],
+  );
 
   const runBacktest = async () => {
-    setIsLoading(true);
-    setError(undefined);
+      setIsLoading(true);
+      setError(undefined);
     try {
-      const detail = await fetchJson<BacktestDetail>(`/backtests/${source}-top-10?source=${source}`);
+      const id = selectedBacktestId || selectedBacktest?.id || `${source}-top-10`;
+      const detail = await fetchJson<BacktestDetail>(`/backtests/${id}?source=${source}`);
       setBacktestDetail(detail);
       setView("backtests");
     } catch (err) {
@@ -551,6 +583,17 @@ function App() {
               <option value="yfinance">yfinance</option>
               <option value="sample">sample</option>
             </select>
+            <select
+              value={selectedBacktestId || ""}
+              onChange={(event) => {
+                setSelectedBacktestId(event.target.value);
+                setBacktestDetail(undefined);
+              }}
+            >
+              {backtests.map((row) => (
+                <option key={row.id} value={row.id}>{row.name}</option>
+              ))}
+            </select>
             <button className="icon-action" onClick={loadDashboard} type="button" aria-label="Refresh dashboard">
               <RefreshCw size={18} />
             </button>
@@ -573,7 +616,7 @@ function App() {
         )}
         <MetricGrid metrics={metrics} />
         {view === "overview" && <RankingsTable rankings={rankings} />}
-        {view === "backtests" && <BacktestsView detail={backtestDetail} />}
+        {view === "backtests" && <BacktestsView backtests={backtests} detail={backtestDetail} />}
         {view === "models" && <ModelsView models={models} />}
         {view === "risk" && <RiskView portfolio={portfolio} />}
       </section>

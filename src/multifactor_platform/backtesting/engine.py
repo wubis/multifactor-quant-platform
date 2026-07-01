@@ -2,7 +2,11 @@ import pandas as pd
 
 from multifactor_platform.backtesting.costs import estimate_trading_costs
 from multifactor_platform.backtesting.metrics import summarize_returns
-from multifactor_platform.backtesting.portfolio import calculate_turnover, equal_weight_top_n
+from multifactor_platform.backtesting.portfolio import (
+    calculate_turnover,
+    equal_weight_sector_neutral_top_n,
+    equal_weight_top_n,
+)
 
 
 def monthly_signal_dates(ranked: pd.DataFrame) -> pd.DatetimeIndex:
@@ -113,6 +117,7 @@ def run_top_n_backtest(
     ranked: pd.DataFrame,
     prices: pd.DataFrame,
     n: int = 50,
+    construction: str = "top_n",
     commission_bps: float = 1.0,
     slippage_bps: float = 4.0,
     cost_bps: float | None = None,
@@ -143,7 +148,10 @@ def run_top_n_backtest(
         trade_date = current["trade_date"]
         next_trade_date = following["trade_date"]
 
-        portfolio = equal_weight_top_n(ranked, signal_date, n=n)
+        if construction == "sector_neutral":
+            portfolio = equal_weight_sector_neutral_top_n(ranked, signal_date, n=n)
+        else:
+            portfolio = equal_weight_top_n(ranked, signal_date, n=n)
         if portfolio.empty:
             continue
 
@@ -210,6 +218,7 @@ def run_top_n_backtest(
         "metrics": summarize_returns(returns, turnover_series, benchmark),
         "settings": {
             "top_n": n,
+            "construction": construction,
             "commission_bps": commission_bps,
             "slippage_bps": slippage_bps,
             "rebalance_delay_days": rebalance_delay_days,

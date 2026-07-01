@@ -1,7 +1,11 @@
 import pandas as pd
 
 from multifactor_platform.backtesting.engine import run_top_n_backtest
-from multifactor_platform.backtesting.portfolio import calculate_turnover, equal_weight_top_n
+from multifactor_platform.backtesting.portfolio import (
+    calculate_turnover,
+    equal_weight_sector_neutral_top_n,
+    equal_weight_top_n,
+)
 
 
 def test_portfolio_weights_sum_to_one():
@@ -24,6 +28,22 @@ def test_turnover_between_rebalances():
     previous = pd.Series({"AAA": 1.0})
 
     assert calculate_turnover(current, previous) == 0.5
+
+
+def test_sector_neutral_portfolio_spreads_holdings_across_sectors():
+    ranked = pd.DataFrame(
+        {
+            "date": pd.to_datetime(["2024-01-31"] * 6),
+            "ticker": ["A1", "A2", "A3", "B1", "B2", "C1"],
+            "sector": ["Tech", "Tech", "Tech", "Health", "Health", "Energy"],
+            "rank": [1, 2, 3, 4, 5, 6],
+        }
+    )
+
+    portfolio = equal_weight_sector_neutral_top_n(ranked, "2024-01-31", n=3)
+
+    assert portfolio["weight"].sum() == 1
+    assert set(portfolio["sector"]) == {"Energy", "Health", "Tech"}
 
 
 def test_backtest_uses_rebalance_delay_and_reports_benchmark_risk_series():

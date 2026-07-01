@@ -297,3 +297,31 @@ def evaluate_models(features: pd.DataFrame) -> list[dict]:
         for model_spec in default_model_specs()
     )
     return results
+
+
+def model_results_by_name(features: pd.DataFrame) -> dict[str, dict]:
+    return {result["name"]: result for result in evaluate_models(features)}
+
+
+def build_ml_rankings(
+    features: pd.DataFrame,
+    model_name: str,
+    results: dict[str, dict] | None = None,
+) -> pd.DataFrame:
+    results = results or model_results_by_name(features)
+    if model_name not in results:
+        available = ", ".join(sorted(results))
+        raise ValueError(f"Unknown model '{model_name}'. Available models: {available}")
+
+    predictions = results[model_name]["predictions"].copy()
+    if predictions.empty:
+        return pd.DataFrame(columns=["date", "ticker", "sector", "rank", "composite_score"])
+
+    metadata_columns = ["date", "ticker", "sector"]
+    metadata = features[[column for column in metadata_columns if column in features.columns]].drop_duplicates(
+        ["date", "ticker"]
+    )
+    ranked = predictions.merge(metadata, on=["date", "ticker"], how="left")
+    ranked["composite_score"] = ranked["prediction"]
+    ranked["rank"] = ranked.groupby("date")["prediction"].rank(method="first", ascending=False)
+    return ranked.sort_values(["date", "rank"]).reset_index(drop=True)

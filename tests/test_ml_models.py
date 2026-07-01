@@ -1,6 +1,7 @@
 from multifactor_platform.features.pipeline import build_feature_frame
 from multifactor_platform.ingestion.sample_data import make_sample_fundamentals, make_sample_prices
 from multifactor_platform.models.ml import (
+    build_ml_rankings,
     evaluate_models,
     prepare_model_frame,
     walk_forward_validate_model,
@@ -41,3 +42,13 @@ def test_evaluate_models_includes_baseline_and_ml_models():
     assert "Elastic Net" in names
     assert "Random Forest" in names
     assert "Gradient Boosting" in names
+
+
+def test_build_ml_rankings_creates_ranked_prediction_frame():
+    features = build_feature_frame(make_sample_prices(days=420), make_sample_fundamentals()).dropna()
+
+    rankings = build_ml_rankings(features, "Random Forest")
+
+    assert not rankings.empty
+    assert {"date", "ticker", "sector", "rank", "composite_score"}.issubset(rankings.columns)
+    assert rankings.groupby("date")["rank"].min().eq(1).all()

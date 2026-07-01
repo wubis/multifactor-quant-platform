@@ -70,6 +70,19 @@ def test_backtest_detail_exposes_benchmark_cost_and_risk_series():
     assert body["rebalance_log"]
 
 
+def test_backtests_endpoint_lists_strategy_variants():
+    client = TestClient(app)
+
+    response = client.get("/backtests?source=sample")
+
+    assert response.status_code == 200
+    ids = {row["id"] for row in response.json()}
+    assert "sample-top-10" in ids
+    assert "sample-sector-neutral-top-20" in ids
+    assert "sample-random-forest-top-10" in ids
+    assert "sample-gradient-boosting-top-10" in ids
+
+
 def test_models_endpoint_runs_walk_forward_models_offline():
     client = TestClient(app)
 

@@ -9,7 +9,7 @@ from multifactor_platform.backtesting.engine import run_top_n_backtest
 from multifactor_platform.config import get_settings
 from multifactor_platform.data_quality import report_to_dict, validate_price_history
 from multifactor_platform.db.persistence import database_status, persist_pipeline_snapshot
-from multifactor_platform.models.ml import evaluate_models
+from multifactor_platform.models.ml import build_ml_rankings, evaluate_models, model_results_by_name
 from multifactor_platform.optimization.constraints import PortfolioConstraints
 from multifactor_platform.optimization.optimizer import optimize_ranked_portfolio
 from multifactor_platform.utils.platform_data import DataSource, load_platform_data
@@ -141,28 +141,100 @@ def stock_features(ticker: str, source: DataSource = "sample"):
 
 @app.get("/backtests")
 def list_backtests(source: DataSource = "sample"):
-    prices, _, rankings = _load_data_or_503(source)
-    result = run_top_n_backtest(rankings, prices, n=10, rebalance_delay_days=1)
+    prices, features, rankings = _load_data_or_503(source)
+    strategies = _build_backtest_strategies(source, prices, features, rankings)
     return [
         {
-            "id": f"{source}-top-10",
-            "name": f"{source.title()} Top 10 Monthly",
+            "id": strategy["id"],
+            "name": strategy["name"],
             "source": source,
-            "metrics": result["metrics"],
-            "settings": result["settings"],
+            "metrics": strategy["result"]["metrics"],
+            "settings": strategy["result"]["settings"],
         }
+        for strategy in strategies
+    ]
+
+
+def _build_backtest_strategies(source: DataSource, prices: pd.DataFrame, features: pd.DataFrame, rankings: pd.DataFrame):
+    strategy_configs = [
+        {
+            "id": f"{source}-top-10",
+            "aliases": {f"{source}-weighted-top-10"},
+            "name": "Weighted Score Top 10",
+            "rankings": rankings,
+            "n": 10,
+            "construction": "top_n",
+        },
+        {
+            "id": f"{source}-sector-neutral-top-20",
+            "aliases": set(),
+            "name": "Weighted Score Sector-Neutral Top 20",
+            "rankings": rankings,
+            "n": 20,
+            "construction": "sector_neutral",
+        },
+    ]
+    model_results = model_results_by_name(features)
+    for model_name, slug in [
+        ("Random Forest", "random-forest"),
+        ("Gradient Boosting", "gradient-boosting"),
+    ]:
+        model_rankings = build_ml_rankings(features, model_name, model_results)
+        if not model_rankings.empty:
+            strategy_configs.append(
+                {
+                    "id": f"{source}-{slug}-top-10",
+                    "aliases": set(),
+                    "name": f"{model_name} Top 10",
+                    "rankings": model_rankings,
+                    "n": 10,
+                    "construction": "top_n",
+                }
+            )
+            strategy_configs.append(
+                {
+                    "id": f"{source}-{slug}-sector-neutral-top-20",
+                    "aliases": set(),
+                    "name": f"{model_name} Sector-Neutral Top 20",
+                    "rankings": model_rankings,
+                    "n": 20,
+                    "construction": "sector_neutral",
+                }
+            )
+
+    return [
+        {
+            **config,
+            "result": run_top_n_backtest(
+                config["rankings"],
+                prices,
+                n=config["n"],
+                construction=config["construction"],
+                rebalance_delay_days=1,
+            ),
+        }
+        for config in strategy_configs
     ]
 
 
 @app.get("/backtests/{backtest_id}")
 def get_backtest(backtest_id: str, source: DataSource = "sample"):
-    valid_ids = {"sample-top-10", "yfinance-top-10"}
-    if backtest_id not in valid_ids:
+    prices, features, rankings = _load_data_or_503(source)
+    strategies = _build_backtest_strategies(source, prices, features, rankings)
+    strategy = next(
+        (
+            item
+            for item in strategies
+            if backtest_id == item["id"] or backtest_id in item.get("aliases", set())
+        ),
+        None,
+    )
+    if strategy is None:
         raise HTTPException(status_code=404, detail="Backtest not found")
-    prices, _, rankings = _load_data_or_503(source)
-    result = run_top_n_backtest(rankings, prices, n=10, rebalance_delay_days=1)
+    result = strategy["result"]
     return {
-        "id": f"{source}-top-10",
+        "id": strategy["id"],
+        "name": strategy["name"],
         "source": source,
         "metrics": result["metrics"],
         "settings": result["settings"],

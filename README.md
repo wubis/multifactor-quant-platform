@@ -49,13 +49,13 @@ The default live demo uses `yfinance`. The deterministic `sample` source is kept
 - Cross-sectional normalization by date
 - Weighted multifactor ranking model
 - ML ranking models with walk-forward validation
-- Monthly top-N equal-weight backtester with delayed rebalancing
+- Monthly top-N and sector-neutral backtests with delayed rebalancing
 - Explicit commission and slippage cost modeling
 - Metrics including CAGR, Sharpe, volatility, max drawdown, win rate, turnover, alpha, tracking error, and information ratio
 - Constrained portfolio optimizer with max position, sector exposure, turnover, and cash controls
 - SQLite persistence for securities, prices, fundamentals, features, predictions, and backtest summaries
 - FastAPI backend with interactive docs
-- React dashboard with rankings, factor charts, model comparison, strategy-vs-SPY equity curves, turnover, costs, and sector exposure history
+- React dashboard with rankings, factor charts, model/strategy comparison, strategy-vs-SPY equity curves, turnover, costs, and sector exposure history
 - Command-line jobs for repeatable pipeline execution
 - GitHub Actions CI and scheduled sample ETL workflow
 - Tests for factors, ranking, backtesting, API routes, jobs, and persistence
@@ -155,6 +155,8 @@ Tracked metrics:
 
 The backtest detail API also returns date-level strategy returns, SPY returns, excess returns, turnover, cost breakdowns, sector exposure, and the rebalance log showing signal date, trade date, and next trade date.
 
+Implemented strategy variants include the original weighted-score top-10 portfolio, a sector-neutral weighted-score portfolio, and out-of-sample Random Forest / Gradient Boosting portfolios built from walk-forward model predictions.
+
 ## Data Quality And Research Caveats
 
 The project includes `GET /data-quality/report?source=...` and a matching ingestion job. These checks report:
@@ -223,6 +225,9 @@ GET  /portfolio/latest?source=yfinance
 GET  /portfolio/optimized?source=yfinance
 GET  /backtests?source=yfinance
 GET  /backtests/yfinance-top-10?source=yfinance
+GET  /backtests/yfinance-sector-neutral-top-20?source=yfinance
+GET  /backtests/yfinance-random-forest-top-10?source=yfinance
+GET  /backtests/yfinance-gradient-boosting-top-10?source=yfinance
 GET  /models?source=yfinance
 GET  /models/walk-forward?source=yfinance
 GET  /stocks/AAPL/features?source=yfinance
