@@ -7,6 +7,7 @@ import pandas as pd
 
 from multifactor_platform.backtesting.engine import run_top_n_backtest
 from multifactor_platform.config import get_settings
+from multifactor_platform.data_quality import report_to_dict, validate_price_history
 from multifactor_platform.db.persistence import database_status, persist_pipeline_snapshot
 from multifactor_platform.utils.platform_data import DataSource, load_platform_data
 
@@ -53,6 +54,7 @@ def root() -> dict:
             "/portfolio/latest?source=yfinance",
             "/backtests?source=yfinance",
             "/stocks/{ticker}/features?source=yfinance",
+            "/data-quality/report?source=yfinance",
             "/persistence/status",
             "/persistence/snapshot?source=yfinance",
         ],
@@ -63,6 +65,12 @@ def root() -> dict:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/data-quality/report")
+def data_quality_report(source: DataSource = "sample"):
+    prices, _, _ = _load_data_or_503(source)
+    return report_to_dict(validate_price_history(prices, source))
 
 
 @app.get("/rankings/latest")

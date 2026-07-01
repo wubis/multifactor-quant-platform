@@ -30,3 +30,13 @@ def test_sample_rankings_endpoint_runs_offline():
     assert response.status_code == 200
     assert response.json()["source"] == "sample"
     assert len(response.json()["rankings"]) == 3
+
+
+def test_data_quality_endpoint_runs_offline():
+    client = TestClient(app)
+
+    response = client.get("/data-quality/report?source=sample")
+
+    assert response.status_code == 200
+    assert response.json()["row_count"] > 0
+    assert "warnings" in response.json()

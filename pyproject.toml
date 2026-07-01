@@ -28,6 +28,13 @@ dev = [
   "ruff>=0.5"
 ]
 
+[project.scripts]
+mfp-ingest-prices = "multifactor_platform.jobs.ingest_prices:main"
+mfp-compute-features = "multifactor_platform.jobs.compute_features:main"
+mfp-run-backtest = "multifactor_platform.jobs.run_backtest:main"
+mfp-persist-snapshot = "multifactor_platform.jobs.persist_snapshot:main"
+mfp-db-status = "multifactor_platform.jobs.db_status:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
