@@ -157,6 +157,8 @@ The backtest detail API also returns date-level strategy returns, SPY returns, e
 
 Implemented strategy variants include the original weighted-score top-10 portfolio, a sector-neutral weighted-score portfolio, and out-of-sample Random Forest / Gradient Boosting portfolios built from walk-forward model predictions.
 
+The yfinance path uses five years of price history by default. Backtest responses include warnings when the validation period is short, when holdings do not change after the initial rebalance, or when a strategy selects most of the available universe. The detail response also includes rebalance-level holdings so results can be inspected instead of treated as a black box.
+
 ## Data Quality And Research Caveats
 
 The project includes `GET /data-quality/report?source=...` and a matching ingestion job. These checks report:
@@ -225,7 +227,7 @@ GET  /portfolio/latest?source=yfinance
 GET  /portfolio/optimized?source=yfinance
 GET  /backtests?source=yfinance
 GET  /backtests/yfinance-top-10?source=yfinance
-GET  /backtests/yfinance-sector-neutral-top-20?source=yfinance
+GET  /backtests/yfinance-sector-neutral-top-12?source=yfinance
 GET  /backtests/yfinance-random-forest-top-10?source=yfinance
 GET  /backtests/yfinance-gradient-boosting-top-10?source=yfinance
 GET  /models?source=yfinance

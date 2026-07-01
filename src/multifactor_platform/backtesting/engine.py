@@ -113,6 +113,49 @@ def _sector_exposure(portfolio: pd.DataFrame, rebalance_date: pd.Timestamp) -> p
     return exposure[["date", "sector", "weight"]]
 
 
+def _portfolio_holdings(portfolio: pd.DataFrame, rebalance_date: pd.Timestamp) -> pd.DataFrame:
+    if portfolio.empty:
+        return pd.DataFrame(columns=["date", "ticker", "sector", "rank", "weight"])
+
+    holdings = portfolio.copy()
+    holdings["date"] = rebalance_date
+    for column in ["sector", "rank"]:
+        if column not in holdings.columns:
+            holdings[column] = None
+    return holdings[["date", "ticker", "sector", "rank", "weight"]]
+
+
+def _backtest_warnings(
+    returns: pd.Series,
+    turnover: pd.Series,
+    holdings: pd.DataFrame,
+    rebalance_log: pd.DataFrame,
+) -> list[str]:
+    warnings = []
+    if len(returns) < 12:
+        warnings.append(
+            f"Backtest has only {len(returns)} monthly observations; treat performance as directional, not conclusive."
+        )
+    if len(returns) < 36:
+        warnings.append(
+            "Backtest history is shorter than 36 months, so alpha and Sharpe estimates may be unstable."
+        )
+    ongoing_turnover = turnover.iloc[1:] if len(turnover) > 1 else turnover
+    if not ongoing_turnover.empty and ongoing_turnover.max() == 0:
+        warnings.append("Holdings did not change after the initial rebalance.")
+    if not holdings.empty:
+        holding_counts = holdings.groupby("date")["ticker"].nunique()
+        if not holding_counts.empty and holding_counts.min() < 10:
+            warnings.append("Some rebalance dates have fewer than 10 holdings.")
+    if not rebalance_log.empty and "available_universe" in rebalance_log.columns:
+        selected_ratio = rebalance_log["holdings"] / rebalance_log["available_universe"].replace(0, pd.NA)
+        if selected_ratio.dropna().median() >= 0.8:
+            warnings.append(
+                "Strategy selects most of the available universe; use fewer holdings or expand the universe."
+            )
+    return warnings
+
+
 def run_top_n_backtest(
     ranked: pd.DataFrame,
     prices: pd.DataFrame,
@@ -139,6 +182,7 @@ def run_top_n_backtest(
     turnovers = []
     costs = []
     sector_exposures = []
+    holdings = []
     rebalance_log = []
     previous_weights: pd.Series | None = None
 
@@ -147,6 +191,7 @@ def run_top_n_backtest(
         rebalance_date = current["rebalance_date"]
         trade_date = current["trade_date"]
         next_trade_date = following["trade_date"]
+        available_universe = ranked.loc[ranked["date"] == signal_date, "ticker"].nunique()
 
         if construction == "sector_neutral":
             portfolio = equal_weight_sector_neutral_top_n(ranked, signal_date, n=n)
@@ -156,8 +201,8 @@ def run_top_n_backtest(
             continue
 
         current_weights = portfolio.set_index("ticker")["weight"]
-        turnover = calculate_turnover(current_weights, previous_weights)
-        previous_weights = current_weights
+        prior_weights = previous_weights
+        turnover = calculate_turnover(current_weights, prior_weights)
 
         gross_return = _period_return(
             prices,
@@ -183,6 +228,7 @@ def run_top_n_backtest(
             )
         )
         sector_exposures.append(_sector_exposure(portfolio, rebalance_date))
+        holdings.append(_portfolio_holdings(portfolio, rebalance_date))
         rebalance_log.append(
             {
                 "date": rebalance_date,
@@ -190,8 +236,20 @@ def run_top_n_backtest(
                 "trade_date": trade_date,
                 "next_trade_date": next_trade_date,
                 "holdings": len(portfolio),
+                "available_universe": available_universe,
+                "turnover": turnover,
+                "changed_positions": (
+                    len(
+                        set(current_weights.index).symmetric_difference(
+                            set(prior_weights.index) if prior_weights is not None else set()
+                        )
+                    )
+                    if prior_weights is not None
+                    else len(current_weights)
+                ),
             }
         )
+        previous_weights = current_weights
 
     returns = pd.Series(dict(portfolio_returns), dtype=float).sort_index()
     benchmark = pd.Series(dict(benchmark_returns), dtype=float).sort_index()
@@ -205,6 +263,12 @@ def run_top_n_backtest(
         if sector_exposures
         else pd.DataFrame(columns=["date", "sector", "weight"])
     )
+    holdings_frame = (
+        pd.concat(holdings, ignore_index=True)
+        if holdings
+        else pd.DataFrame(columns=["date", "ticker", "sector", "rank", "weight"])
+    )
+    rebalance_frame = pd.DataFrame(rebalance_log)
     excess_returns = returns.subtract(benchmark.reindex(returns.index).fillna(0), fill_value=0)
 
     return {
@@ -214,8 +278,10 @@ def run_top_n_backtest(
         "turnover": turnover_series,
         "costs": cost_frame.sort_index(),
         "sector_exposure": sector_frame,
-        "rebalance_log": pd.DataFrame(rebalance_log),
+        "holdings": holdings_frame,
+        "rebalance_log": rebalance_frame,
         "metrics": summarize_returns(returns, turnover_series, benchmark),
+        "warnings": _backtest_warnings(returns, turnover_series, holdings_frame, rebalance_frame),
         "settings": {
             "top_n": n,
             "construction": construction,

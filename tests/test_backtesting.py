@@ -86,5 +86,8 @@ def test_backtest_uses_rebalance_delay_and_reports_benchmark_risk_series():
     assert not result["benchmark_returns"].empty
     assert not result["excess_returns"].empty
     assert not result["costs"].empty
+    assert not result["holdings"].empty
+    assert "warnings" in result
+    assert "changed_positions" in result["rebalance_log"].columns
     assert result["costs"]["slippage_cost"].iloc[0] > result["costs"]["commission_cost"].iloc[0]
     assert set(result["sector_exposure"]["sector"]) == {"Tech", "Health"}

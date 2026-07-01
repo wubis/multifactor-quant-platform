@@ -63,7 +63,7 @@ def load_sample_platform_data():
 
 
 @lru_cache
-def load_yfinance_platform_data(period: str = "3y"):
+def load_yfinance_platform_data(period: str = "5y"):
     prices = fetch_yfinance_prices(period=period)
     fundamentals = fetch_yfinance_fundamentals()
     fundamentals["date"] = prices["date"].min()

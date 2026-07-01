@@ -156,6 +156,17 @@ h2 {
   margin-bottom: 16px;
 }
 
+.warning-panel {
+  border-color: #e2c16b;
+  background: #fff9e8;
+}
+
+.warning-panel p {
+  margin: 8px 0 0;
+  color: #6b5416;
+  font-weight: 700;
+}
+
 .db-strip {
   display: flex;
   flex-wrap: wrap;

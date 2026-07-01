@@ -35,6 +35,7 @@ type Metrics = {
   max_drawdown: number;
   win_rate: number;
   average_turnover: number;
+  average_rebalance_turnover: number;
   benchmark_cagr: number;
   alpha: number;
   tracking_error: number;
@@ -45,6 +46,8 @@ type Backtest = {
   id: string;
   name: string;
   metrics: Metrics;
+  periods: number;
+  warnings: string[];
 };
 
 type BacktestDetail = Backtest & {
@@ -60,12 +63,16 @@ type BacktestDetail = Backtest & {
     total_cost: number;
   }[];
   sector_exposure: { date: string; sector: string; weight: number }[];
+  holdings: { date: string; ticker: string; sector: string; rank: number; weight: number }[];
   rebalance_log: {
     date: string;
     signal_date: string;
     trade_date: string;
     next_trade_date: string;
     holdings: number;
+    available_universe: number;
+    turnover: number;
+    changed_positions: number;
   }[];
 };
 
@@ -182,7 +189,7 @@ function MetricGrid({ metrics }: { metrics?: Metrics }) {
       <div><span>Sharpe</span><strong>{formatNumber(metrics?.sharpe)}</strong></div>
       <div><span>Info Ratio</span><strong>{formatNumber(metrics?.information_ratio)}</strong></div>
       <div><span>Max Drawdown</span><strong>{formatPercent(metrics?.max_drawdown)}</strong></div>
-      <div><span>Turnover</span><strong>{formatPercent(metrics?.average_turnover, 0)}</strong></div>
+      <div><span>Rebalance Turnover</span><strong>{formatPercent(metrics?.average_rebalance_turnover, 0)}</strong></div>
       <div><span>Tracking Error</span><strong>{formatPercent(metrics?.tracking_error)}</strong></div>
     </section>
   );
@@ -249,19 +256,30 @@ function BacktestsView({ backtests, detail }: { backtests: Backtest[]; detail?: 
     commission: Number((row.commission_cost * 100).toFixed(3)),
   }));
   const sectorHistory = buildSectorHistory(detail);
+  const latestHoldingDate = detail?.holdings?.length ? detail.holdings[detail.holdings.length - 1].date : undefined;
+  const latestHoldings = (detail?.holdings || []).filter((row) => row.date === latestHoldingDate);
 
   return (
     <div className="panel-grid">
+      {!!detail?.warnings?.length && (
+        <section className="panel wide-panel warning-panel">
+          <h2>Backtest Warnings</h2>
+          {detail.warnings.map((warning) => (
+            <p key={warning}>{warning}</p>
+          ))}
+        </section>
+      )}
       <section className="panel wide-panel">
         <h2>Strategy Comparison</h2>
         <table>
           <thead>
-            <tr><th>Strategy</th><th>CAGR</th><th>SPY CAGR</th><th>Alpha</th><th>Sharpe</th><th>Info Ratio</th></tr>
+            <tr><th>Strategy</th><th>Months</th><th>CAGR</th><th>SPY CAGR</th><th>Alpha</th><th>Sharpe</th><th>Info Ratio</th></tr>
           </thead>
           <tbody>
             {backtests.map((row) => (
               <tr key={row.id}>
                 <td>{row.name}</td>
+                <td>{row.periods}</td>
                 <td>{formatPercent(row.metrics.cagr)}</td>
                 <td>{formatPercent(row.metrics.benchmark_cagr)}</td>
                 <td>{formatPercent(row.metrics.alpha)}</td>
@@ -316,6 +334,25 @@ function BacktestsView({ backtests, detail }: { backtests: Backtest[]; detail?: 
           </ResponsiveContainer>
         </div>
       </section>
+      <section className="panel">
+        <h2>Rebalance Diagnostics</h2>
+        <table>
+          <thead>
+            <tr><th>Date</th><th>Holdings</th><th>Universe</th><th>Changed</th><th>Turnover</th></tr>
+          </thead>
+          <tbody>
+            {(detail?.rebalance_log || []).slice(-8).map((row) => (
+              <tr key={row.date}>
+                <td>{row.date}</td>
+                <td>{row.holdings}</td>
+                <td>{row.available_universe}</td>
+                <td>{row.changed_positions}</td>
+                <td>{formatPercent(row.turnover, 1)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
       <section className="panel wide-panel">
         <h2>Sector Exposure Over Time</h2>
         <div className="chart">
@@ -337,6 +374,24 @@ function BacktestsView({ backtests, detail }: { backtests: Backtest[]; detail?: 
             </BarChart>
           </ResponsiveContainer>
         </div>
+      </section>
+      <section className="panel wide-panel">
+        <h2>Latest Strategy Holdings</h2>
+        <table>
+          <thead>
+            <tr><th>Ticker</th><th>Sector</th><th>Rank</th><th>Weight</th></tr>
+          </thead>
+          <tbody>
+            {latestHoldings.map((row) => (
+              <tr key={`${row.date}-${row.ticker}`}>
+                <td>{row.ticker}</td>
+                <td>{row.sector}</td>
+                <td>{row.rank}</td>
+                <td>{formatPercent(row.weight, 1)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </section>
       <section className="panel">
         <h2>Return Table</h2>

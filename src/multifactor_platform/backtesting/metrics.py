@@ -43,6 +43,7 @@ def summarize_returns(
     turnovers: pd.Series | None = None,
     benchmark_returns: pd.Series | None = None,
 ) -> dict[str, float]:
+    ongoing_turnovers = turnovers.iloc[1:] if turnovers is not None and len(turnovers) > 1 else turnovers
     summary = {
         "cagr": annualized_return(returns),
         "sharpe": sharpe_ratio(returns),
@@ -50,6 +51,11 @@ def summarize_returns(
         "max_drawdown": max_drawdown(returns),
         "win_rate": float((returns > 0).mean()) if not returns.empty else 0.0,
         "average_turnover": float(turnovers.mean()) if turnovers is not None and not turnovers.empty else 0.0,
+        "average_rebalance_turnover": (
+            float(ongoing_turnovers.mean())
+            if ongoing_turnovers is not None and not ongoing_turnovers.empty
+            else 0.0
+        ),
     }
 
     if benchmark_returns is None or benchmark_returns.empty:

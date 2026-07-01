@@ -19,7 +19,7 @@ def from_yfinance_ticker(ticker: str) -> str:
 
 def fetch_yfinance_prices(
     universe: list[SecurityDefinition] | None = None,
-    period: str = "3y",
+    period: str = "5y",
 ) -> pd.DataFrame:
     try:
         import yfinance as yf

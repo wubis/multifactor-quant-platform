@@ -1,4 +1,5 @@
 from datetime import date
+from functools import lru_cache
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -141,8 +142,7 @@ def stock_features(ticker: str, source: DataSource = "sample"):
 
 @app.get("/backtests")
 def list_backtests(source: DataSource = "sample"):
-    prices, features, rankings = _load_data_or_503(source)
-    strategies = _build_backtest_strategies(source, prices, features, rankings)
+    strategies = _cached_backtest_strategies(source)
     return [
         {
             "id": strategy["id"],
@@ -150,6 +150,8 @@ def list_backtests(source: DataSource = "sample"):
             "source": source,
             "metrics": strategy["result"]["metrics"],
             "settings": strategy["result"]["settings"],
+            "periods": len(strategy["result"]["returns"]),
+            "warnings": strategy["result"]["warnings"],
         }
         for strategy in strategies
     ]
@@ -166,11 +168,11 @@ def _build_backtest_strategies(source: DataSource, prices: pd.DataFrame, feature
             "construction": "top_n",
         },
         {
-            "id": f"{source}-sector-neutral-top-20",
-            "aliases": set(),
-            "name": "Weighted Score Sector-Neutral Top 20",
+            "id": f"{source}-sector-neutral-top-12",
+            "aliases": {f"{source}-sector-neutral-top-20"},
+            "name": "Weighted Score Sector-Neutral Top 12",
             "rankings": rankings,
-            "n": 20,
+            "n": 12,
             "construction": "sector_neutral",
         },
     ]
@@ -193,11 +195,11 @@ def _build_backtest_strategies(source: DataSource, prices: pd.DataFrame, feature
             )
             strategy_configs.append(
                 {
-                    "id": f"{source}-{slug}-sector-neutral-top-20",
-                    "aliases": set(),
-                    "name": f"{model_name} Sector-Neutral Top 20",
+                    "id": f"{source}-{slug}-sector-neutral-top-12",
+                    "aliases": {f"{source}-{slug}-sector-neutral-top-20"},
+                    "name": f"{model_name} Sector-Neutral Top 12",
                     "rankings": model_rankings,
-                    "n": 20,
+                    "n": 12,
                     "construction": "sector_neutral",
                 }
             )
@@ -217,10 +219,15 @@ def _build_backtest_strategies(source: DataSource, prices: pd.DataFrame, feature
     ]
 
 
+@lru_cache(maxsize=4)
+def _cached_backtest_strategies(source: DataSource):
+    prices, features, rankings = _load_data_or_503(source)
+    return _build_backtest_strategies(source, prices, features, rankings)
+
+
 @app.get("/backtests/{backtest_id}")
 def get_backtest(backtest_id: str, source: DataSource = "sample"):
-    prices, features, rankings = _load_data_or_503(source)
-    strategies = _build_backtest_strategies(source, prices, features, rankings)
+    strategies = _cached_backtest_strategies(source)
     strategy = next(
         (
             item
@@ -238,6 +245,7 @@ def get_backtest(backtest_id: str, source: DataSource = "sample"):
         "source": source,
         "metrics": result["metrics"],
         "settings": result["settings"],
+        "warnings": result["warnings"],
         "returns": [
             {"date": index.date().isoformat(), "return": value}
             for index, value in result["returns"].items()
@@ -272,6 +280,16 @@ def get_backtest(backtest_id: str, source: DataSource = "sample"):
             }
             for _, row in result["sector_exposure"].iterrows()
         ],
+        "holdings": [
+            {
+                "date": row["date"].date().isoformat(),
+                "ticker": row["ticker"],
+                "sector": row["sector"],
+                "rank": row["rank"],
+                "weight": row["weight"],
+            }
+            for _, row in result["holdings"].iterrows()
+        ],
         "rebalance_log": [
             {
                 "date": row["date"].date().isoformat(),
@@ -279,6 +297,9 @@ def get_backtest(backtest_id: str, source: DataSource = "sample"):
                 "trade_date": row["trade_date"].date().isoformat(),
                 "next_trade_date": row["next_trade_date"].date().isoformat(),
                 "holdings": row["holdings"],
+                "available_universe": row["available_universe"],
+                "turnover": row["turnover"],
+                "changed_positions": row["changed_positions"],
             }
             for _, row in result["rebalance_log"].iterrows()
         ],
@@ -381,7 +402,9 @@ def persistence_status():
 @app.post("/persistence/snapshot")
 def persist_snapshot(source: DataSource = "sample"):
     try:
-        return persist_pipeline_snapshot(source)
+        result = persist_pipeline_snapshot(source)
+        _cached_backtest_strategies.cache_clear()
+        return result
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except SQLAlchemyError as exc:

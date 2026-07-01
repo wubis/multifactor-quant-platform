@@ -67,7 +67,11 @@ def test_backtest_detail_exposes_benchmark_cost_and_risk_series():
     assert body["turnover"]
     assert body["costs"]
     assert body["sector_exposure"]
+    assert body["holdings"]
     assert body["rebalance_log"]
+    assert "warnings" in body
+    assert "changed_positions" in body["rebalance_log"][0]
+    assert "available_universe" in body["rebalance_log"][0]
 
 
 def test_backtests_endpoint_lists_strategy_variants():
@@ -78,9 +82,10 @@ def test_backtests_endpoint_lists_strategy_variants():
     assert response.status_code == 200
     ids = {row["id"] for row in response.json()}
     assert "sample-top-10" in ids
-    assert "sample-sector-neutral-top-20" in ids
+    assert "sample-sector-neutral-top-12" in ids
     assert "sample-random-forest-top-10" in ids
     assert "sample-gradient-boosting-top-10" in ids
+    assert all("periods" in row for row in response.json())
 
 
 def test_models_endpoint_runs_walk_forward_models_offline():
