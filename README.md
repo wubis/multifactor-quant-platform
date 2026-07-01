@@ -11,11 +11,7 @@ The basic idea is:
 5. Test whether buying the highly ranked stocks would have worked historically.
 6. Serve the results through an API and dashboard.
 
-In resume language, this project is:
-
-> An end-to-end data and machine learning platform for multifactor equity ranking, including ETL pipelines, feature engineering, model evaluation, backtesting, APIs, and dashboarding.
-
-In plain language, it is a mini version of the type of system an investment firm might use to organize data, test ideas, and decide which stocks look interesting.
+In other words, it is an end-to-end data and machine learning platform for multifactor equity ranking, including ETL pipelines, feature engineering, model evaluation, backtesting, APIs, and dashboarding. It is a mini version of the type of system an investment firm might use to organize data, test ideas, and decide which stocks look interesting.
 
 ## What Problem Is This Solving?
 
