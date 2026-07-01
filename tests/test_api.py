@@ -19,4 +19,14 @@ def test_root_endpoint_lists_entry_points():
 
     assert response.status_code == 200
     assert response.json()["docs"] == "/docs"
-    assert "/rankings/latest" in response.json()["endpoints"]
+    assert "/rankings/latest?source=yfinance" in response.json()["endpoints"]
+
+
+def test_sample_rankings_endpoint_runs_offline():
+    client = TestClient(app)
+
+    response = client.get("/rankings/latest?source=sample&limit=3")
+
+    assert response.status_code == 200
+    assert response.json()["source"] == "sample"
+    assert len(response.json()["rankings"]) == 3

@@ -76,6 +76,22 @@ header {
   margin-bottom: 24px;
 }
 
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+select {
+  min-height: 40px;
+  border: 1px solid #cbd6df;
+  border-radius: 8px;
+  background: white;
+  color: #172026;
+  font: inherit;
+  padding: 0 12px;
+}
+
 .eyebrow {
   color: #617080;
   text-transform: uppercase;
@@ -111,6 +127,33 @@ h2 {
 
 .primary-action:hover {
   background: #175875;
+}
+
+.icon-action {
+  width: 40px;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #cbd6df;
+  border-radius: 8px;
+  background: white;
+  color: #172026;
+  cursor: pointer;
+}
+
+.icon-action:hover {
+  border-color: #1f6f8b;
+  color: #1f6f8b;
+}
+
+.error-banner {
+  border: 1px solid #e2a6a6;
+  border-radius: 8px;
+  background: #fff4f4;
+  color: #8a1f1f;
+  padding: 12px 14px;
+  margin-bottom: 16px;
 }
 
 .metrics {
@@ -200,6 +243,11 @@ th {
   header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .toolbar {
+    width: 100%;
+    flex-wrap: wrap;
   }
 
   .metrics {

@@ -1,9 +1,54 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Activity, BarChart3, BriefcaseBusiness, LineChart } from "lucide-react";
+import { Activity, BarChart3, BriefcaseBusiness, LineChart, RefreshCw } from "lucide-react";
 import "./styles.css";
 
 type View = "overview" | "backtests" | "models" | "risk";
+type DataSource = "yfinance" | "sample";
+
+type Ranking = {
+  ticker: string;
+  sector: string;
+  rank: number;
+  composite_score: number;
+  value_score: number;
+  quality_score: number;
+  momentum_score: number;
+};
+
+type Metrics = {
+  cagr: number;
+  sharpe: number;
+  volatility: number;
+  max_drawdown: number;
+  win_rate: number;
+  average_turnover: number;
+};
+
+type Backtest = {
+  id: string;
+  name: string;
+  metrics: Metrics;
+};
+
+type BacktestDetail = Backtest & {
+  returns: { date: string; return: number }[];
+};
+
+type Portfolio = {
+  date: string;
+  positions: { ticker: string; sector: string; rank: number; weight: number; composite_score: number }[];
+  sector_exposure: { sector: string; weight: number }[];
+};
+
+type ModelRow = {
+  name: string;
+  rank_ic: number | null;
+  sharpe: number | null;
+  status: string;
+};
+
+const API_BASE = "http://127.0.0.1:8000";
 
 const navItems = [
   { id: "overview" as const, label: "Overview", icon: Activity },
@@ -12,39 +57,37 @@ const navItems = [
   { id: "risk" as const, label: "Risk", icon: BriefcaseBusiness },
 ];
 
-const sampleRankings = [
-  { ticker: "MSFT", sector: "Information Technology", rank: 1, score: 1.42 },
-  { ticker: "LLY", sector: "Health Care", rank: 2, score: 1.18 },
-  { ticker: "JPM", sector: "Financials", rank: 3, score: 0.97 },
-  { ticker: "COST", sector: "Consumer Staples", rank: 4, score: 0.86 },
-];
+function formatPercent(value: number | undefined, digits = 1) {
+  if (value === undefined || Number.isNaN(value)) return "n/a";
+  return `${(value * 100).toFixed(digits)}%`;
+}
 
-const baseMetrics = {
-  cagr: "12.4%",
-  sharpe: "0.91",
-  drawdown: "-14.8%",
-  turnover: "28%",
-};
+function formatNumber(value: number | undefined, digits = 2) {
+  if (value === undefined || Number.isNaN(value)) return "n/a";
+  return value.toFixed(digits);
+}
 
-const refreshedMetrics = {
-  cagr: "13.1%",
-  sharpe: "1.05",
-  drawdown: "-12.9%",
-  turnover: "30%",
-};
+async function fetchJson<T>(path: string): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`);
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.detail || `Request failed with ${response.status}`);
+  }
+  return response.json();
+}
 
-function MetricGrid({ metrics }: { metrics: typeof baseMetrics }) {
+function MetricGrid({ metrics }: { metrics?: Metrics }) {
   return (
     <section className="metrics">
-      <div><span>CAGR</span><strong>{metrics.cagr}</strong></div>
-      <div><span>Sharpe</span><strong>{metrics.sharpe}</strong></div>
-      <div><span>Max Drawdown</span><strong>{metrics.drawdown}</strong></div>
-      <div><span>Turnover</span><strong>{metrics.turnover}</strong></div>
+      <div><span>CAGR</span><strong>{formatPercent(metrics?.cagr)}</strong></div>
+      <div><span>Sharpe</span><strong>{formatNumber(metrics?.sharpe)}</strong></div>
+      <div><span>Max Drawdown</span><strong>{formatPercent(metrics?.max_drawdown)}</strong></div>
+      <div><span>Turnover</span><strong>{formatPercent(metrics?.average_turnover, 0)}</strong></div>
     </section>
   );
 }
 
-function RankingsTable() {
+function RankingsTable({ rankings }: { rankings: Ranking[] }) {
   return (
     <section className="panel">
       <h2>Top Ranked Names</h2>
@@ -53,12 +96,12 @@ function RankingsTable() {
           <tr><th>Rank</th><th>Ticker</th><th>Sector</th><th>Score</th></tr>
         </thead>
         <tbody>
-          {sampleRankings.map((row) => (
+          {rankings.map((row) => (
             <tr key={row.ticker}>
               <td>{row.rank}</td>
               <td>{row.ticker}</td>
               <td>{row.sector}</td>
-              <td>{row.score.toFixed(2)}</td>
+              <td>{formatNumber(row.composite_score)}</td>
             </tr>
           ))}
         </tbody>
@@ -67,28 +110,19 @@ function RankingsTable() {
   );
 }
 
-function BacktestsView() {
-  const monthlyReturns = [
-    { month: "Jan", value: "2.4%" },
-    { month: "Feb", value: "-1.1%" },
-    { month: "Mar", value: "3.2%" },
-    { month: "Apr", value: "0.8%" },
-    { month: "May", value: "1.7%" },
-  ];
-
+function BacktestsView({ detail }: { detail?: BacktestDetail }) {
   return (
     <section className="panel">
-      <h2>Backtest Results</h2>
+      <h2>Backtest Returns</h2>
       <table>
         <thead>
-          <tr><th>Month</th><th>Portfolio Return</th><th>Benchmark Return</th></tr>
+          <tr><th>Date</th><th>Monthly Return</th></tr>
         </thead>
         <tbody>
-          {monthlyReturns.map((row, index) => (
-            <tr key={row.month}>
-              <td>{row.month}</td>
-              <td>{row.value}</td>
-              <td>{["1.9%", "-0.4%", "2.1%", "0.5%", "1.2%"][index]}</td>
+          {(detail?.returns || []).slice(-12).map((row) => (
+            <tr key={row.date}>
+              <td>{row.date}</td>
+              <td>{formatPercent(row.return)}</td>
             </tr>
           ))}
         </tbody>
@@ -97,13 +131,7 @@ function BacktestsView() {
   );
 }
 
-function ModelsView() {
-  const models = [
-    { name: "Weighted Score", ic: "0.041", sharpe: "1.05", status: "Active" },
-    { name: "Elastic Net", ic: "0.035", sharpe: "0.88", status: "Research" },
-    { name: "XGBoost", ic: "0.049", sharpe: "1.12", status: "Planned" },
-  ];
-
+function ModelsView({ models }: { models: ModelRow[] }) {
   return (
     <section className="panel">
       <h2>Model Comparison</h2>
@@ -115,8 +143,8 @@ function ModelsView() {
           {models.map((model) => (
             <tr key={model.name}>
               <td>{model.name}</td>
-              <td>{model.ic}</td>
-              <td>{model.sharpe}</td>
+              <td>{model.rank_ic === null ? "n/a" : formatNumber(model.rank_ic, 3)}</td>
+              <td>{model.sharpe === null ? "n/a" : formatNumber(model.sharpe)}</td>
               <td><span className="status-pill">{model.status}</span></td>
             </tr>
           ))}
@@ -126,26 +154,19 @@ function ModelsView() {
   );
 }
 
-function RiskView() {
-  const exposures = [
-    { sector: "Information Technology", exposure: "24%" },
-    { sector: "Health Care", exposure: "18%" },
-    { sector: "Financials", exposure: "17%" },
-    { sector: "Consumer Staples", exposure: "11%" },
-  ];
-
+function RiskView({ portfolio }: { portfolio?: Portfolio }) {
   return (
     <section className="panel">
-      <h2>Risk Exposure</h2>
+      <h2>Sector Exposure</h2>
       <table>
         <thead>
           <tr><th>Sector</th><th>Exposure</th><th>Limit</th></tr>
         </thead>
         <tbody>
-          {exposures.map((row) => (
+          {(portfolio?.sector_exposure || []).map((row) => (
             <tr key={row.sector}>
               <td>{row.sector}</td>
-              <td>{row.exposure}</td>
+              <td>{formatPercent(row.weight, 0)}</td>
               <td>25%</td>
             </tr>
           ))}
@@ -157,14 +178,63 @@ function RiskView() {
 
 function App() {
   const [view, setView] = useState<View>("overview");
-  const [hasRunBacktest, setHasRunBacktest] = useState(false);
-  const metrics = hasRunBacktest ? refreshedMetrics : baseMetrics;
+  const [source, setSource] = useState<DataSource>("yfinance");
+  const [rankings, setRankings] = useState<Ranking[]>([]);
+  const [backtest, setBacktest] = useState<Backtest | undefined>();
+  const [backtestDetail, setBacktestDetail] = useState<BacktestDetail | undefined>();
+  const [portfolio, setPortfolio] = useState<Portfolio | undefined>();
+  const [models, setModels] = useState<ModelRow[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | undefined>();
 
   const titles = {
     overview: "Latest Stock Rankings",
     backtests: "Backtest Analytics",
     models: "Ranking Models",
     risk: "Portfolio Risk",
+  };
+
+  const loadDashboard = async () => {
+    setIsLoading(true);
+    setError(undefined);
+    try {
+      const [rankingResponse, backtestResponse, portfolioResponse, modelResponse] = await Promise.all([
+        fetchJson<{ rankings: Ranking[] }>(`/rankings/latest?source=${source}&limit=10`),
+        fetchJson<Backtest[]>(`/backtests?source=${source}`),
+        fetchJson<Portfolio>(`/portfolio/latest?source=${source}&limit=10`),
+        fetchJson<{ models: ModelRow[] }>(`/models?source=${source}`),
+      ]);
+
+      setRankings(rankingResponse.rankings);
+      setBacktest(backtestResponse[0]);
+      setPortfolio(portfolioResponse);
+      setModels(modelResponse.models);
+      setBacktestDetail(undefined);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load dashboard data");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadDashboard();
+  }, [source]);
+
+  const metrics = useMemo(() => backtestDetail?.metrics || backtest?.metrics, [backtest, backtestDetail]);
+
+  const runBacktest = async () => {
+    setIsLoading(true);
+    setError(undefined);
+    try {
+      const detail = await fetchJson<BacktestDetail>(`/backtests/${source}-top-10?source=${source}`);
+      setBacktestDetail(detail);
+      setView("backtests");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to run backtest");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -191,18 +261,28 @@ function App() {
       <section className="content">
         <header>
           <div>
-            <p className="eyebrow">Monthly rebalance</p>
+            <p className="eyebrow">{source} data source</p>
             <h1>{titles[view]}</h1>
           </div>
-          <button className="primary-action" onClick={() => setHasRunBacktest(true)} type="button">
-            {hasRunBacktest ? "Backtest Updated" : "Run Backtest"}
-          </button>
+          <div className="toolbar">
+            <select value={source} onChange={(event) => setSource(event.target.value as DataSource)}>
+              <option value="yfinance">yfinance</option>
+              <option value="sample">sample</option>
+            </select>
+            <button className="icon-action" onClick={loadDashboard} type="button" aria-label="Refresh dashboard">
+              <RefreshCw size={18} />
+            </button>
+            <button className="primary-action" onClick={runBacktest} type="button">
+              {isLoading ? "Loading" : "Run Backtest"}
+            </button>
+          </div>
         </header>
+        {error && <div className="error-banner">{error}</div>}
         <MetricGrid metrics={metrics} />
-        {view === "overview" && <RankingsTable />}
-        {view === "backtests" && <BacktestsView />}
-        {view === "models" && <ModelsView />}
-        {view === "risk" && <RiskView />}
+        {view === "overview" && <RankingsTable rankings={rankings} />}
+        {view === "backtests" && <BacktestsView detail={backtestDetail} />}
+        {view === "models" && <ModelsView models={models} />}
+        {view === "risk" && <RiskView portfolio={portfolio} />}
       </section>
     </main>
   );

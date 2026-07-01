@@ -266,6 +266,22 @@ The first version focuses on:
 
 The scaffold currently uses generated sample data so the system can run without a paid data vendor.
 
+It also includes a live demo path using `yfinance`:
+
+```text
+yfinance price/fundamental download
+  -> validation and cleaning
+  -> feature engineering
+  -> weighted ranking model
+  -> top-N backtest
+  -> FastAPI endpoints
+  -> React dashboard
+```
+
+The dashboard defaults to `source=yfinance`, while the API still supports `source=sample` for offline tests and demos.
+
+Important caveat: yfinance is useful for a local demo, but it is not a professional point-in-time research dataset. The yfinance demo uses current fundamentals as a snapshot, which is fine for showing the platform plumbing but not enough for trustworthy historical performance claims.
+
 ## Factors In The MVP
 
 ### Momentum
@@ -474,11 +490,19 @@ Useful API endpoints:
 
 ```text
 GET /health
-GET /rankings/latest
-GET /portfolio/latest
-GET /backtests
-GET /backtests/sample-top-10
-GET /stocks/AAPL/features
+GET /rankings/latest?source=yfinance
+GET /portfolio/latest?source=yfinance
+GET /backtests?source=yfinance
+GET /backtests/yfinance-top-10?source=yfinance
+GET /stocks/AAPL/features?source=yfinance
+```
+
+If yfinance is unavailable or you want the deterministic offline demo, use `source=sample` instead:
+
+```text
+GET /rankings/latest?source=sample
+GET /portfolio/latest?source=sample
+GET /backtests?source=sample
 ```
 
 ### Dashboard Setup
