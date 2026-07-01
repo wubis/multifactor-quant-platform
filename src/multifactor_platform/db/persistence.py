@@ -99,7 +99,7 @@ def persist_securities(session: Session) -> dict[str, int]:
 def persist_prices(session: Session, prices: pd.DataFrame, source: DataSource, ids: dict[str, int]) -> int:
     source_security_ids = [ids[ticker] for ticker in prices["ticker"].drop_duplicates() if ticker in ids]
     if source_security_ids:
-        session.execute(delete(Price).where(Price.security_id.in_(source_security_ids), Price.source == source))
+        session.execute(delete(Price).where(Price.security_id.in_(source_security_ids)))
 
     rows = []
     for record in prices.to_dict(orient="records"):
@@ -143,12 +143,7 @@ def persist_fundamentals(
     latest = features.sort_values("date").groupby("ticker", as_index=False).tail(1)
     source_security_ids = [ids[ticker] for ticker in latest["ticker"].drop_duplicates() if ticker in ids]
     if source_security_ids:
-        session.execute(
-            delete(Fundamental).where(
-                Fundamental.security_id.in_(source_security_ids),
-                Fundamental.source == source,
-            )
-        )
+        session.execute(delete(Fundamental).where(Fundamental.security_id.in_(source_security_ids)))
 
     rows = []
     for record in latest.to_dict(orient="records"):

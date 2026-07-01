@@ -13,3 +13,17 @@ def test_persist_sample_pipeline_snapshot_to_sqlite(tmp_path):
     assert status["features"] > 0
     assert status["model_predictions"] > 0
     assert status["backtest_results"] == 1
+
+
+def test_persist_snapshot_is_idempotent_for_existing_rows(tmp_path):
+    database_url = f"sqlite:///{tmp_path / 'multifactor.db'}"
+
+    first = persist_pipeline_snapshot("sample", database_url=database_url)
+    second = persist_pipeline_snapshot("sample", database_url=database_url)
+    status = database_status(database_url=database_url)
+
+    assert first["prices"] == second["prices"]
+    assert first["features"] == second["features"]
+    assert status["prices"] == second["prices"]
+    assert status["features"] == second["features"]
+    assert status["model_predictions"] == second["model_predictions"]

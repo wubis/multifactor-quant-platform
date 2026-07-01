@@ -3,6 +3,7 @@ from datetime import date
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
+from sqlalchemy.exc import SQLAlchemyError
 
 from multifactor_platform.backtesting.engine import run_top_n_backtest
 from multifactor_platform.config import get_settings
@@ -307,4 +308,12 @@ def persistence_status():
 
 @app.post("/persistence/snapshot")
 def persist_snapshot(source: DataSource = "sample"):
-    return persist_pipeline_snapshot(source)
+    try:
+        return persist_pipeline_snapshot(source)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Database snapshot failed. The transaction was rolled back.",
+        ) from exc
