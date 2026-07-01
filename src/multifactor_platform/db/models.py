@@ -1,4 +1,6 @@
-from datetime import date, datetime
+from __future__ import annotations
+
+from datetime import UTC, date, datetime
 
 from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -6,6 +8,10 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 class Base(DeclarativeBase):
     pass
+
+
+def utc_now() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class Security(Base):
@@ -34,7 +40,7 @@ class Price(Base):
     adj_close: Mapped[float] = mapped_column(Float)
     volume: Mapped[float] = mapped_column(Float)
     source: Mapped[str] = mapped_column(String(64))
-    loaded_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    loaded_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 
 class Fundamental(Base):
@@ -50,7 +56,7 @@ class Fundamental(Base):
     metric: Mapped[str] = mapped_column(String(64))
     value: Mapped[float] = mapped_column(Float)
     source: Mapped[str] = mapped_column(String(64))
-    loaded_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    loaded_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 
 class Feature(Base):
@@ -69,9 +75,12 @@ class Feature(Base):
     beta_252d: Mapped[float | None] = mapped_column(Float)
     pe_ratio: Mapped[float | None] = mapped_column(Float)
     pb_ratio: Mapped[float | None] = mapped_column(Float)
+    ev_to_ebitda: Mapped[float | None] = mapped_column(Float)
+    fcf_yield: Mapped[float | None] = mapped_column(Float)
     roe: Mapped[float | None] = mapped_column(Float)
     gross_margin: Mapped[float | None] = mapped_column(Float)
     debt_to_equity: Mapped[float | None] = mapped_column(Float)
+    earnings_stability: Mapped[float | None] = mapped_column(Float)
     market_cap: Mapped[float | None] = mapped_column(Float)
     dollar_volume: Mapped[float | None] = mapped_column(Float)
 
@@ -95,7 +104,7 @@ class BacktestResult(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(128))
-    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     cagr: Mapped[float | None] = mapped_column(Float)
     sharpe: Mapped[float | None] = mapped_column(Float)
     max_drawdown: Mapped[float | None] = mapped_column(Float)

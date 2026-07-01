@@ -1,6 +1,17 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Activity, BarChart3, BriefcaseBusiness, LineChart, RefreshCw } from "lucide-react";
+import { Activity, BarChart3, BriefcaseBusiness, Database, LineChart, RefreshCw } from "lucide-react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Line,
+  LineChart as RechartsLineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import "./styles.css";
 
 type View = "overview" | "backtests" | "models" | "risk";
@@ -48,6 +59,16 @@ type ModelRow = {
   status: string;
 };
 
+type PersistenceStatus = {
+  database_url: string;
+  securities: number;
+  prices: number;
+  fundamentals: number;
+  features: number;
+  model_predictions: number;
+  backtest_results: number;
+};
+
 const API_BASE = "http://127.0.0.1:8000";
 
 const navItems = [
@@ -67,8 +88,20 @@ function formatNumber(value: number | undefined, digits = 2) {
   return value.toFixed(digits);
 }
 
-async function fetchJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`);
+function buildEquityCurve(returns: BacktestDetail["returns"] = []) {
+  let equity = 1;
+  return returns.map((row) => {
+    equity *= 1 + row.return;
+    return {
+      date: row.date,
+      equity: Number(equity.toFixed(4)),
+      monthlyReturn: Number((row.return * 100).toFixed(2)),
+    };
+  });
+}
+
+async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, options);
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new Error(body.detail || `Request failed with ${response.status}`);
@@ -88,46 +121,103 @@ function MetricGrid({ metrics }: { metrics?: Metrics }) {
 }
 
 function RankingsTable({ rankings }: { rankings: Ranking[] }) {
+  const factorRows = rankings.slice(0, 8).map((row) => ({
+    ticker: row.ticker,
+    value: Number(row.value_score.toFixed(2)),
+    quality: Number(row.quality_score.toFixed(2)),
+    momentum: Number(row.momentum_score.toFixed(2)),
+  }));
+
   return (
-    <section className="panel">
-      <h2>Top Ranked Names</h2>
-      <table>
-        <thead>
-          <tr><th>Rank</th><th>Ticker</th><th>Sector</th><th>Score</th></tr>
-        </thead>
-        <tbody>
-          {rankings.map((row) => (
-            <tr key={row.ticker}>
-              <td>{row.rank}</td>
-              <td>{row.ticker}</td>
-              <td>{row.sector}</td>
-              <td>{formatNumber(row.composite_score)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </section>
+    <div className="panel-grid">
+      <section className="panel">
+        <h2>Top Ranked Names</h2>
+        <table>
+          <thead>
+            <tr><th>Rank</th><th>Ticker</th><th>Sector</th><th>Score</th></tr>
+          </thead>
+          <tbody>
+            {rankings.map((row) => (
+              <tr key={row.ticker}>
+                <td>{row.rank}</td>
+                <td>{row.ticker}</td>
+                <td>{row.sector}</td>
+                <td>{formatNumber(row.composite_score)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+      <section className="panel">
+        <h2>Factor Scores</h2>
+        <div className="chart">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={factorRows}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="ticker" />
+              <YAxis />
+              <Tooltip />
+              <Bar dataKey="value" fill="#1f6f8b" />
+              <Bar dataKey="quality" fill="#5f8f3e" />
+              <Bar dataKey="momentum" fill="#c06c3e" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </section>
+    </div>
   );
 }
 
 function BacktestsView({ detail }: { detail?: BacktestDetail }) {
+  const chartRows = buildEquityCurve(detail?.returns);
+
   return (
-    <section className="panel">
-      <h2>Backtest Returns</h2>
-      <table>
-        <thead>
-          <tr><th>Date</th><th>Monthly Return</th></tr>
-        </thead>
-        <tbody>
-          {(detail?.returns || []).slice(-12).map((row) => (
-            <tr key={row.date}>
-              <td>{row.date}</td>
-              <td>{formatPercent(row.return)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </section>
+    <div className="panel-grid">
+      <section className="panel wide-panel">
+        <h2>Equity Curve</h2>
+        <div className="chart">
+          <ResponsiveContainer width="100%" height="100%">
+            <RechartsLineChart data={chartRows}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="date" minTickGap={28} />
+              <YAxis domain={["auto", "auto"]} />
+              <Tooltip />
+              <Line type="monotone" dataKey="equity" stroke="#1f6f8b" strokeWidth={2} dot={false} />
+            </RechartsLineChart>
+          </ResponsiveContainer>
+        </div>
+      </section>
+      <section className="panel">
+        <h2>Recent Monthly Returns</h2>
+        <div className="chart">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartRows.slice(-12)}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="date" minTickGap={24} />
+              <YAxis />
+              <Tooltip />
+              <Bar dataKey="monthlyReturn" fill="#5f8f3e" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </section>
+      <section className="panel">
+        <h2>Return Table</h2>
+        <table>
+          <thead>
+            <tr><th>Date</th><th>Monthly Return</th></tr>
+          </thead>
+          <tbody>
+            {(detail?.returns || []).slice(-8).map((row) => (
+              <tr key={row.date}>
+                <td>{row.date}</td>
+                <td>{formatPercent(row.return)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+    </div>
   );
 }
 
@@ -155,24 +245,45 @@ function ModelsView({ models }: { models: ModelRow[] }) {
 }
 
 function RiskView({ portfolio }: { portfolio?: Portfolio }) {
+  const exposureRows = (portfolio?.sector_exposure || []).map((row) => ({
+    sector: row.sector,
+    exposure: Number((row.weight * 100).toFixed(1)),
+  }));
+
   return (
-    <section className="panel">
-      <h2>Sector Exposure</h2>
-      <table>
-        <thead>
-          <tr><th>Sector</th><th>Exposure</th><th>Limit</th></tr>
-        </thead>
-        <tbody>
-          {(portfolio?.sector_exposure || []).map((row) => (
-            <tr key={row.sector}>
-              <td>{row.sector}</td>
-              <td>{formatPercent(row.weight, 0)}</td>
-              <td>25%</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </section>
+    <div className="panel-grid">
+      <section className="panel wide-panel">
+        <h2>Sector Exposure</h2>
+        <div className="chart">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={exposureRows} layout="vertical" margin={{ left: 120 }}>
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+              <XAxis type="number" />
+              <YAxis dataKey="sector" type="category" width={120} />
+              <Tooltip />
+              <Bar dataKey="exposure" fill="#1f6f8b" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </section>
+      <section className="panel">
+        <h2>Latest Positions</h2>
+        <table>
+          <thead>
+            <tr><th>Ticker</th><th>Weight</th><th>Rank</th></tr>
+          </thead>
+          <tbody>
+            {(portfolio?.positions || []).map((row) => (
+              <tr key={row.ticker}>
+                <td>{row.ticker}</td>
+                <td>{formatPercent(row.weight, 0)}</td>
+                <td>{row.rank}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+    </div>
   );
 }
 
@@ -184,6 +295,7 @@ function App() {
   const [backtestDetail, setBacktestDetail] = useState<BacktestDetail | undefined>();
   const [portfolio, setPortfolio] = useState<Portfolio | undefined>();
   const [models, setModels] = useState<ModelRow[]>([]);
+  const [persistence, setPersistence] = useState<PersistenceStatus | undefined>();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | undefined>();
 
@@ -198,20 +310,42 @@ function App() {
     setIsLoading(true);
     setError(undefined);
     try {
-      const [rankingResponse, backtestResponse, portfolioResponse, modelResponse] = await Promise.all([
+      const [
+        rankingResponse,
+        backtestResponse,
+        portfolioResponse,
+        modelResponse,
+        persistenceResponse,
+      ] = await Promise.all([
         fetchJson<{ rankings: Ranking[] }>(`/rankings/latest?source=${source}&limit=10`),
         fetchJson<Backtest[]>(`/backtests?source=${source}`),
         fetchJson<Portfolio>(`/portfolio/latest?source=${source}&limit=10`),
         fetchJson<{ models: ModelRow[] }>(`/models?source=${source}`),
+        fetchJson<PersistenceStatus>("/persistence/status"),
       ]);
 
       setRankings(rankingResponse.rankings);
       setBacktest(backtestResponse[0]);
       setPortfolio(portfolioResponse);
       setModels(modelResponse.models);
+      setPersistence(persistenceResponse);
       setBacktestDetail(undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load dashboard data");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const persistSnapshot = async () => {
+    setIsLoading(true);
+    setError(undefined);
+    try {
+      await fetchJson(`/persistence/snapshot?source=${source}`, { method: "POST" });
+      const status = await fetchJson<PersistenceStatus>("/persistence/status");
+      setPersistence(status);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to persist snapshot");
     } finally {
       setIsLoading(false);
     }
@@ -272,12 +406,23 @@ function App() {
             <button className="icon-action" onClick={loadDashboard} type="button" aria-label="Refresh dashboard">
               <RefreshCw size={18} />
             </button>
+            <button className="icon-action" onClick={persistSnapshot} type="button" aria-label="Persist snapshot">
+              <Database size={18} />
+            </button>
             <button className="primary-action" onClick={runBacktest} type="button">
               {isLoading ? "Loading" : "Run Backtest"}
             </button>
           </div>
         </header>
         {error && <div className="error-banner">{error}</div>}
+        {persistence && (
+          <div className="db-strip">
+            <span>{persistence.prices.toLocaleString()} prices</span>
+            <span>{persistence.features.toLocaleString()} features</span>
+            <span>{persistence.model_predictions.toLocaleString()} predictions</span>
+            <span>{persistence.backtest_results.toLocaleString()} backtests</span>
+          </div>
+        )}
         <MetricGrid metrics={metrics} />
         {view === "overview" && <RankingsTable rankings={rankings} />}
         {view === "backtests" && <BacktestsView detail={backtestDetail} />}

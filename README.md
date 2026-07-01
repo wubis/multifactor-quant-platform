@@ -188,6 +188,14 @@ The database stores the important tables:
 
 The scaffold includes SQLAlchemy models for these tables. SQLAlchemy is a Python library for defining and interacting with relational database tables.
 
+For local development, the default database is SQLite:
+
+```text
+data/processed/multifactor.db
+```
+
+Docker can still override the database URL to use PostgreSQL.
+
 ### Feature Store
 
 A feature store is a central place to keep reusable features.
@@ -224,7 +232,7 @@ It is built with React and is meant to show:
 - model comparison
 - risk exposures
 
-Right now the dashboard is still a scaffold, but it already has clickable sections for Overview, Backtests, Models, and Risk.
+The dashboard calls the FastAPI backend directly. It includes clickable sections for Overview, Backtests, Models, and Risk, plus charts for factor scores, equity curve, monthly returns, and sector exposure.
 
 ## Architecture
 
@@ -495,6 +503,8 @@ GET /portfolio/latest?source=yfinance
 GET /backtests?source=yfinance
 GET /backtests/yfinance-top-10?source=yfinance
 GET /stocks/AAPL/features?source=yfinance
+GET /persistence/status
+POST /persistence/snapshot?source=yfinance
 ```
 
 If yfinance is unavailable or you want the deterministic offline demo, use `source=sample` instead:
@@ -526,19 +536,23 @@ The backend and dashboard are separate processes. In normal development, keep bo
 - backend: `http://127.0.0.1:8000`
 - dashboard: `http://localhost:5173`
 
+The database button in the dashboard writes the currently selected source into the local database. For example, if the source selector says `sample`, it persists the sample pipeline. If it says `yfinance`, it persists the yfinance-backed pipeline.
+
 ## Current Scaffold
 
 The current codebase includes:
 
 - generated sample market and fundamentals data
+- live yfinance price and fundamentals ingestion
 - price and fundamentals validation helpers
 - factor calculations for momentum, volatility, beta, and liquidity
 - cross-sectional normalization
 - weighted baseline ranking model
 - monthly top-N backtesting engine
 - FastAPI backend
-- React dashboard scaffold
+- React dashboard with API-backed charts
 - SQLAlchemy database models
+- SQLite persistence for prices, fundamentals, features, predictions, and backtest summaries
 - tests for factor timing, ranking, portfolio weights, and API routes
 
 ## Suggested Build Order
@@ -646,7 +660,7 @@ Important limitations:
 - there is no true point-in-time vendor dataset yet
 - delisted companies are not handled yet
 - transaction costs are simplified
-- dashboard data is partly static
+- dashboard model metadata is still placeholder-level
 - ML models are placeholders for later phases
 
 Those limitations are normal for an MVP. The purpose of the scaffold is to create a clean system shape before adding expensive data, complex models, and production deployment.

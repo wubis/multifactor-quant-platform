@@ -7,6 +7,7 @@ import pandas as pd
 
 from multifactor_platform.backtesting.engine import run_top_n_backtest
 from multifactor_platform.config import get_settings
+from multifactor_platform.db.persistence import database_status, persist_pipeline_snapshot
 from multifactor_platform.utils.platform_data import DataSource, load_platform_data
 
 settings = get_settings()
@@ -52,6 +53,8 @@ def root() -> dict:
             "/portfolio/latest?source=yfinance",
             "/backtests?source=yfinance",
             "/stocks/{ticker}/features?source=yfinance",
+            "/persistence/status",
+            "/persistence/snapshot?source=yfinance",
         ],
         "data_sources": ["yfinance", "sample"],
     }
@@ -183,3 +186,13 @@ def models(source: DataSource = "sample"):
             {"name": "XGBoost", "rank_ic": None, "sharpe": None, "status": "Planned"},
         ],
     }
+
+
+@app.get("/persistence/status")
+def persistence_status():
+    return database_status()
+
+
+@app.post("/persistence/snapshot")
+def persist_snapshot(source: DataSource = "sample"):
+    return persist_pipeline_snapshot(source)
