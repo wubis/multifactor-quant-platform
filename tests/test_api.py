@@ -83,6 +83,8 @@ def test_backtests_endpoint_lists_strategy_variants():
     ids = {row["id"] for row in response.json()}
     assert "sample-top-10" in ids
     assert "sample-sector-neutral-top-12" in ids
+    assert "sample-linear-regression-top-10" in ids
+    assert "sample-elastic-net-top-10" in ids
     assert "sample-random-forest-top-10" in ids
     assert "sample-gradient-boosting-top-10" in ids
     assert all("periods" in row for row in response.json())

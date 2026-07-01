@@ -223,7 +223,11 @@ function OverviewView({
     momentum: Number(row.momentum_score.toFixed(2)),
   }));
   const holdings = latestHoldings(detail);
-  const isWeightedStrategy = selectedBacktest?.id.includes("top-10") && !selectedBacktest.id.includes("random") && !selectedBacktest.id.includes("gradient");
+  const isWeightedStrategy = selectedBacktest
+    ? !["linear-regression", "elastic-net", "random-forest", "gradient-boosting"].some((slug) =>
+        selectedBacktest.id.includes(slug),
+      )
+    : true;
 
   return (
     <div className="panel-grid">

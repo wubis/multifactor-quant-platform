@@ -178,6 +178,8 @@ def _build_backtest_strategies(source: DataSource, prices: pd.DataFrame, feature
     ]
     model_results = model_results_by_name(features)
     for model_name, slug in [
+        ("Linear Regression", "linear-regression"),
+        ("Elastic Net", "elastic-net"),
         ("Random Forest", "random-forest"),
         ("Gradient Boosting", "gradient-boosting"),
     ]:
