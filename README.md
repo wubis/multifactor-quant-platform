@@ -627,12 +627,8 @@ Important limitations:
 
 Those limitations are normal for an MVP. The purpose of the scaffold is to create a clean system shape before adding expensive data, complex models, and production deployment.
 
-## Why This Project Is Valuable
-
-This project demonstrates three skill areas at once:
+## Concepts Used
 
 1. Finance: factors, portfolios, backtesting, risk, and trading constraints.
 2. Machine learning: features, targets, ranking, validation, and model comparison.
 3. Infrastructure: ETL, databases, APIs, Docker, tests, and dashboards.
-
-That combination is what makes the project stronger than a standalone notebook. It shows not only that an idea can be tested, but that it can be turned into a usable platform.
