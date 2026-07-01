@@ -171,6 +171,18 @@ function buildSectorHistory(detail?: BacktestDetail) {
   return { rows, sectors };
 }
 
+function latestHoldings(detail?: BacktestDetail) {
+  const latestDate = detail?.holdings?.length ? detail.holdings[detail.holdings.length - 1].date : undefined;
+  return (detail?.holdings || []).filter((row) => row.date === latestDate);
+}
+
+function latestSectorExposure(detail?: BacktestDetail) {
+  const latestDate = detail?.sector_exposure?.length
+    ? detail.sector_exposure[detail.sector_exposure.length - 1].date
+    : undefined;
+  return (detail?.sector_exposure || []).filter((row) => row.date === latestDate);
+}
+
 async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, options);
   if (!response.ok) {
@@ -195,49 +207,71 @@ function MetricGrid({ metrics }: { metrics?: Metrics }) {
   );
 }
 
-function RankingsTable({ rankings }: { rankings: Ranking[] }) {
+function OverviewView({
+  rankings,
+  selectedBacktest,
+  detail,
+}: {
+  rankings: Ranking[];
+  selectedBacktest?: Backtest;
+  detail?: BacktestDetail;
+}) {
   const factorRows = rankings.slice(0, 8).map((row) => ({
     ticker: row.ticker,
     value: Number(row.value_score.toFixed(2)),
     quality: Number(row.quality_score.toFixed(2)),
     momentum: Number(row.momentum_score.toFixed(2)),
   }));
+  const holdings = latestHoldings(detail);
+  const isWeightedStrategy = selectedBacktest?.id.includes("top-10") && !selectedBacktest.id.includes("random") && !selectedBacktest.id.includes("gradient");
 
   return (
     <div className="panel-grid">
       <section className="panel">
-        <h2>Top Ranked Names</h2>
+        <h2>{selectedBacktest ? `${selectedBacktest.name} Holdings` : "Latest Holdings"}</h2>
         <table>
           <thead>
-            <tr><th>Rank</th><th>Ticker</th><th>Sector</th><th>Score</th></tr>
+            <tr><th>Rank</th><th>Ticker</th><th>Sector</th><th>Weight</th></tr>
           </thead>
           <tbody>
-            {rankings.map((row) => (
-              <tr key={row.ticker}>
+            {(holdings.length ? holdings : rankings.map((row) => ({ ...row, weight: 0.1 }))).map((row) => (
+              <tr key={`${row.ticker}-${row.rank}`}>
                 <td>{row.rank}</td>
                 <td>{row.ticker}</td>
                 <td>{row.sector}</td>
-                <td>{formatNumber(row.composite_score)}</td>
+                <td>{formatPercent(row.weight, 1)}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </section>
       <section className="panel">
-        <h2>Factor Scores</h2>
-        <div className="chart">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={factorRows}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="ticker" />
-              <YAxis />
-              <Tooltip />
-              <Bar dataKey="value" fill="#1f6f8b" />
-              <Bar dataKey="quality" fill="#5f8f3e" />
-              <Bar dataKey="momentum" fill="#c06c3e" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        <h2>{isWeightedStrategy ? "Weighted Factor Scores" : "Selected Strategy Context"}</h2>
+        {isWeightedStrategy ? (
+          <div className="chart">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={factorRows}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="ticker" />
+                <YAxis />
+                <Tooltip />
+                <Bar dataKey="value" fill="#1f6f8b" />
+                <Bar dataKey="quality" fill="#5f8f3e" />
+                <Bar dataKey="momentum" fill="#c06c3e" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <table>
+            <tbody>
+              <tr><th>Strategy</th><td>{selectedBacktest?.name || "n/a"}</td></tr>
+              <tr><th>Backtest Months</th><td>{selectedBacktest?.periods || 0}</td></tr>
+              <tr><th>Latest Holdings</th><td>{holdings.length}</td></tr>
+              <tr><th>Avg Rebalance Turnover</th><td>{formatPercent(selectedBacktest?.metrics.average_rebalance_turnover, 1)}</td></tr>
+              <tr><th>Information Ratio</th><td>{formatNumber(selectedBacktest?.metrics.information_ratio)}</td></tr>
+            </tbody>
+          </table>
+        )}
       </section>
     </div>
   );
@@ -467,8 +501,20 @@ function ModelsView({ models }: { models: ModelRow[] }) {
   );
 }
 
-function RiskView({ portfolio }: { portfolio?: Portfolio }) {
-  const exposureRows = (portfolio?.sector_exposure || []).map((row) => ({
+function RiskView({
+  portfolio,
+  selectedBacktest,
+  detail,
+}: {
+  portfolio?: Portfolio;
+  selectedBacktest?: Backtest;
+  detail?: BacktestDetail;
+}) {
+  const strategyExposure = latestSectorExposure(detail);
+  const strategyHoldings = latestHoldings(detail);
+  const exposureSource = strategyExposure.length ? strategyExposure : (portfolio?.sector_exposure || []);
+  const positionSource = strategyHoldings.length ? strategyHoldings : (portfolio?.positions || []);
+  const exposureRows = exposureSource.map((row) => ({
     sector: row.sector,
     exposure: Number((row.weight * 100).toFixed(1)),
   }));
@@ -476,7 +522,7 @@ function RiskView({ portfolio }: { portfolio?: Portfolio }) {
   return (
     <div className="panel-grid">
       <section className="panel wide-panel">
-        <h2>Sector Exposure</h2>
+        <h2>{selectedBacktest ? `${selectedBacktest.name} Sector Exposure` : "Sector Exposure"}</h2>
         <div className="chart">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={exposureRows} layout="vertical" margin={{ left: 120 }}>
@@ -490,16 +536,17 @@ function RiskView({ portfolio }: { portfolio?: Portfolio }) {
         </div>
       </section>
       <section className="panel">
-        <h2>Latest Positions</h2>
+        <h2>{selectedBacktest ? "Selected Strategy Positions" : "Latest Positions"}</h2>
         <table>
           <thead>
-            <tr><th>Ticker</th><th>Weight</th><th>Rank</th></tr>
+            <tr><th>Ticker</th><th>Sector</th><th>Weight</th><th>Rank</th></tr>
           </thead>
           <tbody>
-            {(portfolio?.positions || []).map((row) => (
+            {positionSource.map((row) => (
               <tr key={row.ticker}>
                 <td>{row.ticker}</td>
-                <td>{formatPercent(row.weight, 0)}</td>
+                <td>{row.sector}</td>
+                <td>{formatPercent(row.weight, 1)}</td>
                 <td>{row.rank}</td>
               </tr>
             ))}
@@ -582,6 +629,30 @@ function App() {
     loadDashboard();
   }, [source]);
 
+  useEffect(() => {
+    if (!selectedBacktestId) return;
+
+    let cancelled = false;
+    const loadSelectedBacktest = async () => {
+      setError(undefined);
+      try {
+        const detail = await fetchJson<BacktestDetail>(`/backtests/${selectedBacktestId}?source=${source}`);
+        if (!cancelled) {
+          setBacktestDetail(detail);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Unable to load selected strategy");
+        }
+      }
+    };
+
+    loadSelectedBacktest();
+    return () => {
+      cancelled = true;
+    };
+  }, [source, selectedBacktestId]);
+
   const selectedBacktest = useMemo(
     () => backtests.find((row) => row.id === selectedBacktestId) || backtests[0],
     [backtests, selectedBacktestId],
@@ -592,8 +663,8 @@ function App() {
   );
 
   const runBacktest = async () => {
-      setIsLoading(true);
-      setError(undefined);
+    setIsLoading(true);
+    setError(undefined);
     try {
       const id = selectedBacktestId || selectedBacktest?.id || `${source}-top-10`;
       const detail = await fetchJson<BacktestDetail>(`/backtests/${id}?source=${source}`);
@@ -670,10 +741,14 @@ function App() {
           </div>
         )}
         <MetricGrid metrics={metrics} />
-        {view === "overview" && <RankingsTable rankings={rankings} />}
+        {view === "overview" && (
+          <OverviewView rankings={rankings} selectedBacktest={selectedBacktest} detail={backtestDetail} />
+        )}
         {view === "backtests" && <BacktestsView backtests={backtests} detail={backtestDetail} />}
         {view === "models" && <ModelsView models={models} />}
-        {view === "risk" && <RiskView portfolio={portfolio} />}
+        {view === "risk" && (
+          <RiskView portfolio={portfolio} selectedBacktest={selectedBacktest} detail={backtestDetail} />
+        )}
       </section>
     </main>
   );
