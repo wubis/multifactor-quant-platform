@@ -6,7 +6,8 @@ def equal_weight_top_n(ranked: pd.DataFrame, date, n: int = 50) -> pd.DataFrame:
     if slice_.empty:
         return pd.DataFrame(columns=["date", "ticker", "weight"])
     slice_["weight"] = 1 / len(slice_)
-    return slice_[["date", "ticker", "weight"]]
+    columns = [column for column in ["date", "ticker", "sector", "rank", "weight"] if column in slice_.columns]
+    return slice_[columns]
 
 
 def calculate_turnover(current: pd.Series, previous: pd.Series | None) -> float:

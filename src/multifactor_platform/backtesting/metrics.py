@@ -27,8 +27,23 @@ def max_drawdown(returns: pd.Series) -> float:
     return float(drawdown.min()) if not drawdown.empty else 0.0
 
 
-def summarize_returns(returns: pd.Series, turnovers: pd.Series | None = None) -> dict[str, float]:
-    return {
+def tracking_error(excess_returns: pd.Series, periods_per_year: int = 12) -> float:
+    return float(excess_returns.std(ddof=0) * np.sqrt(periods_per_year))
+
+
+def information_ratio(excess_returns: pd.Series, periods_per_year: int = 12) -> float:
+    error = tracking_error(excess_returns, periods_per_year)
+    if error == 0:
+        return 0.0
+    return float(annualized_return(excess_returns, periods_per_year) / error)
+
+
+def summarize_returns(
+    returns: pd.Series,
+    turnovers: pd.Series | None = None,
+    benchmark_returns: pd.Series | None = None,
+) -> dict[str, float]:
+    summary = {
         "cagr": annualized_return(returns),
         "sharpe": sharpe_ratio(returns),
         "volatility": annualized_volatility(returns),
@@ -36,3 +51,32 @@ def summarize_returns(returns: pd.Series, turnovers: pd.Series | None = None) ->
         "win_rate": float((returns > 0).mean()) if not returns.empty else 0.0,
         "average_turnover": float(turnovers.mean()) if turnovers is not None and not turnovers.empty else 0.0,
     }
+
+    if benchmark_returns is None or benchmark_returns.empty:
+        summary.update(
+            {
+                "benchmark_cagr": 0.0,
+                "benchmark_sharpe": 0.0,
+                "excess_cagr": 0.0,
+                "alpha": 0.0,
+                "tracking_error": 0.0,
+                "information_ratio": 0.0,
+            }
+        )
+        return summary
+
+    aligned = pd.concat([returns.rename("strategy"), benchmark_returns.rename("benchmark")], axis=1).fillna(0)
+    excess = aligned["strategy"] - aligned["benchmark"]
+    benchmark_cagr = annualized_return(aligned["benchmark"])
+    strategy_cagr = annualized_return(aligned["strategy"])
+    summary.update(
+        {
+            "benchmark_cagr": benchmark_cagr,
+            "benchmark_sharpe": sharpe_ratio(aligned["benchmark"]),
+            "excess_cagr": annualized_return(excess),
+            "alpha": strategy_cagr - benchmark_cagr,
+            "tracking_error": tracking_error(excess),
+            "information_ratio": information_ratio(excess),
+        }
+    )
+    return summary

@@ -48,12 +48,13 @@ The default live demo uses `yfinance`. The deterministic `sample` source is kept
 - Momentum, volatility, beta, value, quality, size, and liquidity features
 - Cross-sectional normalization by date
 - Weighted multifactor ranking model
-- Monthly top-N equal-weight backtester
-- Metrics including CAGR, Sharpe, volatility, max drawdown, win rate, and turnover
+- Monthly top-N equal-weight backtester with delayed rebalancing
+- Explicit commission and slippage cost modeling
+- Metrics including CAGR, Sharpe, volatility, max drawdown, win rate, turnover, alpha, tracking error, and information ratio
 - Constrained portfolio optimizer with max position, sector exposure, turnover, and cash controls
 - SQLite persistence for securities, prices, fundamentals, features, predictions, and backtest summaries
 - FastAPI backend with interactive docs
-- React dashboard with rankings, factor charts, equity curve, monthly returns, and sector exposure
+- React dashboard with rankings, factor charts, strategy-vs-SPY equity curves, turnover, costs, and sector exposure history
 - Command-line jobs for repeatable pipeline execution
 - GitHub Actions CI and scheduled sample ETL workflow
 - Tests for factors, ranking, backtesting, API routes, jobs, and persistence
@@ -111,18 +112,26 @@ The baseline strategy:
 
 1. Rank stocks monthly.
 2. Select the top names.
-3. Equal-weight the portfolio.
-4. Hold for one month.
-5. Rebalance and repeat.
+3. Wait for the configured rebalance delay.
+4. Trade on the next available market date.
+5. Equal-weight the portfolio.
+6. Hold until the next rebalance trade date.
+7. Deduct commission and slippage costs based on turnover.
 
 Tracked metrics:
 
 - CAGR: annualized growth rate
+- Benchmark CAGR: SPY annualized growth over the same holding windows
+- Alpha: strategy CAGR minus SPY CAGR
 - Sharpe ratio: return per unit of volatility
+- Information ratio: excess return per unit of benchmark-relative volatility
+- Tracking error: volatility of strategy returns minus benchmark returns
 - Max drawdown: worst peak-to-trough loss
 - Volatility: variability of returns
 - Win rate: share of positive months
 - Turnover: how much the portfolio changes each rebalance
+
+The backtest detail API also returns date-level strategy returns, SPY returns, excess returns, turnover, cost breakdowns, sector exposure, and the rebalance log showing signal date, trade date, and next trade date.
 
 ## Data Quality And Research Caveats
 
@@ -275,7 +284,7 @@ Current limitations:
 
 - yfinance is not point-in-time or institutionally auditable
 - delisted stocks are not handled yet
-- transaction cost and slippage models are simplified
+- transaction cost and slippage models are explicit but still simplified
 - ML models are placeholders for later phases
 - portfolio optimization is deterministic and constraint-based, not yet a full risk-model optimizer
 
@@ -283,7 +292,6 @@ Current limitations:
 
 - Add point-in-time fundamentals from a professional data vendor
 - Store universe membership by date to reduce survivorship bias
-- Add rebalance delay and stronger transaction-cost modeling
 - Implement Elastic Net and tree-based ranking models
 - Add walk-forward validation and model comparison
 - Add covariance/risk-model-aware portfolio optimization

@@ -1,1 +1,1 @@
-from multifactor_platform.utils.platform_data import load_sample_platform_data
+from multifactor_platform.utils.platform_data import load_sample_platform_data as load_sample_platform_data

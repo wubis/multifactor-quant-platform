@@ -1,5 +1,4 @@
 from datetime import date
-from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -141,13 +140,14 @@ def stock_features(ticker: str, source: DataSource = "sample"):
 @app.get("/backtests")
 def list_backtests(source: DataSource = "sample"):
     prices, _, rankings = _load_data_or_503(source)
-    result = run_top_n_backtest(rankings, prices, n=10)
+    result = run_top_n_backtest(rankings, prices, n=10, rebalance_delay_days=1)
     return [
         {
             "id": f"{source}-top-10",
             "name": f"{source.title()} Top 10 Monthly",
             "source": source,
             "metrics": result["metrics"],
+            "settings": result["settings"],
         }
     ]
 
@@ -158,14 +158,55 @@ def get_backtest(backtest_id: str, source: DataSource = "sample"):
     if backtest_id not in valid_ids:
         raise HTTPException(status_code=404, detail="Backtest not found")
     prices, _, rankings = _load_data_or_503(source)
-    result = run_top_n_backtest(rankings, prices, n=10)
+    result = run_top_n_backtest(rankings, prices, n=10, rebalance_delay_days=1)
     return {
         "id": f"{source}-top-10",
         "source": source,
         "metrics": result["metrics"],
+        "settings": result["settings"],
         "returns": [
             {"date": index.date().isoformat(), "return": value}
             for index, value in result["returns"].items()
+        ],
+        "benchmark_returns": [
+            {"date": index.date().isoformat(), "return": value}
+            for index, value in result["benchmark_returns"].items()
+        ],
+        "excess_returns": [
+            {"date": index.date().isoformat(), "return": value}
+            for index, value in result["excess_returns"].items()
+        ],
+        "turnover": [
+            {"date": index.date().isoformat(), "turnover": value}
+            for index, value in result["turnover"].items()
+        ],
+        "costs": [
+            {
+                "date": index.date().isoformat(),
+                "turnover": row["turnover"],
+                "commission_cost": row["commission_cost"],
+                "slippage_cost": row["slippage_cost"],
+                "total_cost": row["total_cost"],
+            }
+            for index, row in result["costs"].iterrows()
+        ],
+        "sector_exposure": [
+            {
+                "date": row["date"].date().isoformat(),
+                "sector": row["sector"],
+                "weight": row["weight"],
+            }
+            for _, row in result["sector_exposure"].iterrows()
+        ],
+        "rebalance_log": [
+            {
+                "date": row["date"].date().isoformat(),
+                "signal_date": row["signal_date"].date().isoformat(),
+                "trade_date": row["trade_date"].date().isoformat(),
+                "next_trade_date": row["next_trade_date"].date().isoformat(),
+                "holdings": row["holdings"],
+            }
+            for _, row in result["rebalance_log"].iterrows()
         ],
     }
 

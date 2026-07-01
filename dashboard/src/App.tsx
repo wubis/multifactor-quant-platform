@@ -5,6 +5,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Legend,
   Line,
   LineChart as RechartsLineChart,
   ResponsiveContainer,
@@ -34,6 +35,10 @@ type Metrics = {
   max_drawdown: number;
   win_rate: number;
   average_turnover: number;
+  benchmark_cagr: number;
+  alpha: number;
+  tracking_error: number;
+  information_ratio: number;
 };
 
 type Backtest = {
@@ -44,6 +49,24 @@ type Backtest = {
 
 type BacktestDetail = Backtest & {
   returns: { date: string; return: number }[];
+  benchmark_returns: { date: string; return: number }[];
+  excess_returns: { date: string; return: number }[];
+  turnover: { date: string; turnover: number }[];
+  costs: {
+    date: string;
+    turnover: number;
+    commission_cost: number;
+    slippage_cost: number;
+    total_cost: number;
+  }[];
+  sector_exposure: { date: string; sector: string; weight: number }[];
+  rebalance_log: {
+    date: string;
+    signal_date: string;
+    trade_date: string;
+    next_trade_date: string;
+    holdings: number;
+  }[];
 };
 
 type Portfolio = {
@@ -100,6 +123,41 @@ function buildEquityCurve(returns: BacktestDetail["returns"] = []) {
   });
 }
 
+function buildBacktestRows(detail?: BacktestDetail) {
+  let strategyEquity = 1;
+  let benchmarkEquity = 1;
+  const benchmarkByDate = new Map((detail?.benchmark_returns || []).map((row) => [row.date, row.return]));
+  const excessByDate = new Map((detail?.excess_returns || []).map((row) => [row.date, row.return]));
+
+  return (detail?.returns || []).map((row) => {
+    const benchmarkReturn = benchmarkByDate.get(row.date) || 0;
+    strategyEquity *= 1 + row.return;
+    benchmarkEquity *= 1 + benchmarkReturn;
+    return {
+      date: row.date,
+      strategyEquity: Number(strategyEquity.toFixed(4)),
+      benchmarkEquity: Number(benchmarkEquity.toFixed(4)),
+      monthlyReturn: Number((row.return * 100).toFixed(2)),
+      benchmarkReturn: Number((benchmarkReturn * 100).toFixed(2)),
+      excessReturn: Number(((excessByDate.get(row.date) || 0) * 100).toFixed(2)),
+    };
+  });
+}
+
+function buildSectorHistory(detail?: BacktestDetail) {
+  const recentDates = Array.from(new Set((detail?.sector_exposure || []).map((row) => row.date))).slice(-6);
+  const sectors = Array.from(new Set((detail?.sector_exposure || []).map((row) => row.sector))).slice(0, 8);
+  const rows = recentDates.map((date) => {
+    const output: Record<string, string | number> = { date };
+    sectors.forEach((sector) => {
+      const match = detail?.sector_exposure.find((row) => row.date === date && row.sector === sector);
+      output[sector] = Number(((match?.weight || 0) * 100).toFixed(1));
+    });
+    return output;
+  });
+  return { rows, sectors };
+}
+
 async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, options);
   if (!response.ok) {
@@ -113,9 +171,13 @@ function MetricGrid({ metrics }: { metrics?: Metrics }) {
   return (
     <section className="metrics">
       <div><span>CAGR</span><strong>{formatPercent(metrics?.cagr)}</strong></div>
+      <div><span>SPY CAGR</span><strong>{formatPercent(metrics?.benchmark_cagr)}</strong></div>
+      <div><span>Alpha</span><strong>{formatPercent(metrics?.alpha)}</strong></div>
       <div><span>Sharpe</span><strong>{formatNumber(metrics?.sharpe)}</strong></div>
+      <div><span>Info Ratio</span><strong>{formatNumber(metrics?.information_ratio)}</strong></div>
       <div><span>Max Drawdown</span><strong>{formatPercent(metrics?.max_drawdown)}</strong></div>
       <div><span>Turnover</span><strong>{formatPercent(metrics?.average_turnover, 0)}</strong></div>
+      <div><span>Tracking Error</span><strong>{formatPercent(metrics?.tracking_error)}</strong></div>
     </section>
   );
 }
@@ -169,12 +231,23 @@ function RankingsTable({ rankings }: { rankings: Ranking[] }) {
 }
 
 function BacktestsView({ detail }: { detail?: BacktestDetail }) {
-  const chartRows = buildEquityCurve(detail?.returns);
+  const chartRows = buildBacktestRows(detail);
+  const turnoverRows = (detail?.turnover || []).map((row) => ({
+    date: row.date,
+    turnover: Number((row.turnover * 100).toFixed(1)),
+  }));
+  const costRows = (detail?.costs || []).map((row) => ({
+    date: row.date,
+    totalCost: Number((row.total_cost * 100).toFixed(3)),
+    slippage: Number((row.slippage_cost * 100).toFixed(3)),
+    commission: Number((row.commission_cost * 100).toFixed(3)),
+  }));
+  const sectorHistory = buildSectorHistory(detail);
 
   return (
     <div className="panel-grid">
       <section className="panel wide-panel">
-        <h2>Equity Curve</h2>
+        <h2>Strategy vs SPY</h2>
         <div className="chart">
           <ResponsiveContainer width="100%" height="100%">
             <RechartsLineChart data={chartRows}>
@@ -182,13 +255,15 @@ function BacktestsView({ detail }: { detail?: BacktestDetail }) {
               <XAxis dataKey="date" minTickGap={28} />
               <YAxis domain={["auto", "auto"]} />
               <Tooltip />
-              <Line type="monotone" dataKey="equity" stroke="#1f6f8b" strokeWidth={2} dot={false} />
+              <Legend />
+              <Line type="monotone" dataKey="strategyEquity" name="Strategy" stroke="#1f6f8b" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="benchmarkEquity" name="SPY" stroke="#c06c3e" strokeWidth={2} dot={false} />
             </RechartsLineChart>
           </ResponsiveContainer>
         </div>
       </section>
       <section className="panel">
-        <h2>Recent Monthly Returns</h2>
+        <h2>Recent Excess Returns</h2>
         <div className="chart">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={chartRows.slice(-12)}>
@@ -196,7 +271,43 @@ function BacktestsView({ detail }: { detail?: BacktestDetail }) {
               <XAxis dataKey="date" minTickGap={24} />
               <YAxis />
               <Tooltip />
-              <Bar dataKey="monthlyReturn" fill="#5f8f3e" />
+              <Bar dataKey="excessReturn" fill="#5f8f3e" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </section>
+      <section className="panel">
+        <h2>Turnover by Rebalance</h2>
+        <div className="chart">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={turnoverRows.slice(-12)}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="date" minTickGap={24} />
+              <YAxis />
+              <Tooltip />
+              <Bar dataKey="turnover" fill="#1f6f8b" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </section>
+      <section className="panel wide-panel">
+        <h2>Sector Exposure Over Time</h2>
+        <div className="chart">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={sectorHistory.rows}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="date" />
+              <YAxis />
+              <Tooltip />
+              <Legend />
+              {sectorHistory.sectors.map((sector, index) => (
+                <Bar
+                  dataKey={sector}
+                  fill={["#1f6f8b", "#5f8f3e", "#c06c3e", "#7d5ba6", "#d4a017", "#2f7d6d", "#9b4d4d", "#617080"][index % 8]}
+                  key={sector}
+                  stackId="sector"
+                />
+              ))}
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -205,13 +316,33 @@ function BacktestsView({ detail }: { detail?: BacktestDetail }) {
         <h2>Return Table</h2>
         <table>
           <thead>
-            <tr><th>Date</th><th>Monthly Return</th></tr>
+            <tr><th>Date</th><th>Strategy</th><th>SPY</th><th>Excess</th></tr>
           </thead>
           <tbody>
-            {(detail?.returns || []).slice(-8).map((row) => (
+            {chartRows.slice(-8).map((row) => (
               <tr key={row.date}>
                 <td>{row.date}</td>
-                <td>{formatPercent(row.return)}</td>
+                <td>{formatPercent(row.monthlyReturn / 100)}</td>
+                <td>{formatPercent(row.benchmarkReturn / 100)}</td>
+                <td>{formatPercent(row.excessReturn / 100)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+      <section className="panel">
+        <h2>Cost Table</h2>
+        <table>
+          <thead>
+            <tr><th>Date</th><th>Total Cost</th><th>Slippage</th><th>Commission</th></tr>
+          </thead>
+          <tbody>
+            {costRows.slice(-8).map((row) => (
+              <tr key={row.date}>
+                <td>{row.date}</td>
+                <td>{formatPercent(row.totalCost / 100, 3)}</td>
+                <td>{formatPercent(row.slippage / 100, 3)}</td>
+                <td>{formatPercent(row.commission / 100, 3)}</td>
               </tr>
             ))}
           </tbody>

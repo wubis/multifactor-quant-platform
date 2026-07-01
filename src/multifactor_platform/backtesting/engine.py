@@ -1,6 +1,6 @@
 import pandas as pd
 
-from multifactor_platform.backtesting.costs import apply_transaction_costs
+from multifactor_platform.backtesting.costs import estimate_trading_costs
 from multifactor_platform.backtesting.metrics import summarize_returns
 from multifactor_platform.backtesting.portfolio import calculate_turnover, equal_weight_top_n
 
@@ -24,41 +24,195 @@ def build_forward_returns(prices: pd.DataFrame) -> pd.DataFrame:
     return month_end
 
 
+def _available_market_dates(prices: pd.DataFrame) -> pd.DatetimeIndex:
+    return pd.DatetimeIndex(pd.to_datetime(prices["date"].drop_duplicates()).sort_values())
+
+
+def _first_market_date_on_or_after(market_dates: pd.DatetimeIndex, target_date: pd.Timestamp) -> pd.Timestamp | None:
+    candidates = market_dates[market_dates >= target_date]
+    return candidates[0] if len(candidates) else None
+
+
+def _build_trade_schedule(
+    ranked: pd.DataFrame,
+    prices: pd.DataFrame,
+    rebalance_delay_days: int,
+) -> list[dict]:
+    signal_dates = monthly_signal_dates(ranked)
+    market_dates = _available_market_dates(prices)
+    schedule = []
+
+    for month_end in signal_dates:
+        available_signals = ranked.loc[ranked["date"] <= month_end]
+        if available_signals.empty:
+            continue
+
+        signal_date = pd.Timestamp(available_signals["date"].max())
+        target_trade_date = signal_date + pd.Timedelta(days=rebalance_delay_days)
+        trade_date = _first_market_date_on_or_after(market_dates, target_trade_date)
+        if trade_date is None:
+            continue
+
+        schedule.append(
+            {
+                "rebalance_date": pd.Timestamp(month_end),
+                "signal_date": signal_date,
+                "trade_date": trade_date,
+            }
+        )
+
+    return schedule
+
+
+def _period_return(
+    prices: pd.DataFrame,
+    tickers: pd.Series,
+    weights: pd.Series,
+    start_date: pd.Timestamp,
+    end_date: pd.Timestamp,
+) -> float:
+    period_prices = prices.loc[
+        prices["ticker"].isin(tickers) & prices["date"].isin([start_date, end_date]),
+        ["date", "ticker", "adj_close"],
+    ]
+    pivot = period_prices.pivot(index="ticker", columns="date", values="adj_close")
+    if start_date not in pivot.columns or end_date not in pivot.columns:
+        return 0.0
+
+    returns = (pivot[end_date] / pivot[start_date] - 1).replace([pd.NA, pd.NaT], 0).fillna(0)
+    aligned = pd.concat([weights.rename("weight"), returns.rename("return")], axis=1).fillna(0)
+    return float((aligned["weight"] * aligned["return"]).sum())
+
+
+def _benchmark_return(
+    prices: pd.DataFrame,
+    start_date: pd.Timestamp,
+    end_date: pd.Timestamp,
+    benchmark_ticker: str,
+) -> float:
+    benchmark_prices = prices.loc[
+        (prices["ticker"] == benchmark_ticker) & prices["date"].isin([start_date, end_date]),
+        ["date", "adj_close"],
+    ].set_index("date")["adj_close"]
+    if start_date not in benchmark_prices.index or end_date not in benchmark_prices.index:
+        return 0.0
+    return float(benchmark_prices.loc[end_date] / benchmark_prices.loc[start_date] - 1)
+
+
+def _sector_exposure(portfolio: pd.DataFrame, rebalance_date: pd.Timestamp) -> pd.DataFrame:
+    if "sector" not in portfolio.columns or portfolio.empty:
+        return pd.DataFrame(columns=["date", "sector", "weight"])
+
+    exposure = portfolio.groupby("sector", dropna=False)["weight"].sum().reset_index()
+    exposure["sector"] = exposure["sector"].fillna("Unknown")
+    exposure["date"] = rebalance_date
+    return exposure[["date", "sector", "weight"]]
+
+
 def run_top_n_backtest(
     ranked: pd.DataFrame,
     prices: pd.DataFrame,
     n: int = 50,
-    cost_bps: float = 5.0,
+    commission_bps: float = 1.0,
+    slippage_bps: float = 4.0,
+    cost_bps: float | None = None,
+    rebalance_delay_days: int = 1,
+    benchmark_ticker: str = "SPY",
 ) -> dict:
-    forward_returns = build_forward_returns(prices)
-    signal_dates = monthly_signal_dates(ranked)
+    if cost_bps is not None:
+        commission_bps = cost_bps
+        slippage_bps = 0.0
+
+    ranked = ranked.copy()
+    prices = prices.copy()
+    ranked["date"] = pd.to_datetime(ranked["date"])
+    prices["date"] = pd.to_datetime(prices["date"])
+
+    schedule = _build_trade_schedule(ranked, prices, rebalance_delay_days)
     portfolio_returns = []
+    benchmark_returns = []
     turnovers = []
+    costs = []
+    sector_exposures = []
+    rebalance_log = []
     previous_weights: pd.Series | None = None
 
-    for signal_date in signal_dates:
-        available = ranked.loc[ranked["date"] <= signal_date]
-        if available.empty:
-            continue
-        actual_signal_date = available["date"].max()
-        portfolio = equal_weight_top_n(ranked, actual_signal_date, n=n)
+    for current, following in zip(schedule, schedule[1:]):
+        signal_date = current["signal_date"]
+        rebalance_date = current["rebalance_date"]
+        trade_date = current["trade_date"]
+        next_trade_date = following["trade_date"]
+
+        portfolio = equal_weight_top_n(ranked, signal_date, n=n)
         if portfolio.empty:
             continue
 
-        month_returns = forward_returns.loc[forward_returns["date"] == signal_date]
-        portfolio = portfolio.merge(month_returns[["ticker", "forward_1m_return"]], on="ticker", how="left")
-        portfolio_return = float((portfolio["weight"] * portfolio["forward_1m_return"].fillna(0)).sum())
         current_weights = portfolio.set_index("ticker")["weight"]
         turnover = calculate_turnover(current_weights, previous_weights)
         previous_weights = current_weights
-        portfolio_returns.append((signal_date, portfolio_return))
-        turnovers.append((signal_date, turnover))
+
+        gross_return = _period_return(
+            prices,
+            portfolio["ticker"],
+            current_weights,
+            trade_date,
+            next_trade_date,
+        )
+        benchmark_return = _benchmark_return(prices, trade_date, next_trade_date, benchmark_ticker)
+        trading_cost = turnover * ((commission_bps + slippage_bps) / 10_000)
+        net_return = gross_return - trading_cost
+
+        portfolio_returns.append((rebalance_date, net_return))
+        benchmark_returns.append((rebalance_date, benchmark_return))
+        turnovers.append((rebalance_date, turnover))
+        costs.append(
+            (
+                rebalance_date,
+                turnover,
+                turnover * (commission_bps / 10_000),
+                turnover * (slippage_bps / 10_000),
+                trading_cost,
+            )
+        )
+        sector_exposures.append(_sector_exposure(portfolio, rebalance_date))
+        rebalance_log.append(
+            {
+                "date": rebalance_date,
+                "signal_date": signal_date,
+                "trade_date": trade_date,
+                "next_trade_date": next_trade_date,
+                "holdings": len(portfolio),
+            }
+        )
 
     returns = pd.Series(dict(portfolio_returns), dtype=float).sort_index()
+    benchmark = pd.Series(dict(benchmark_returns), dtype=float).sort_index()
     turnover_series = pd.Series(dict(turnovers), dtype=float).sort_index()
-    net_returns = apply_transaction_costs(returns, turnover_series, cost_bps)
+    cost_frame = pd.DataFrame(
+        costs,
+        columns=["date", "turnover", "commission_cost", "slippage_cost", "total_cost"],
+    ).set_index("date") if costs else estimate_trading_costs(turnover_series, commission_bps, slippage_bps)
+    sector_frame = (
+        pd.concat(sector_exposures, ignore_index=True)
+        if sector_exposures
+        else pd.DataFrame(columns=["date", "sector", "weight"])
+    )
+    excess_returns = returns.subtract(benchmark.reindex(returns.index).fillna(0), fill_value=0)
+
     return {
-        "returns": net_returns,
+        "returns": returns,
+        "benchmark_returns": benchmark,
+        "excess_returns": excess_returns,
         "turnover": turnover_series,
-        "metrics": summarize_returns(net_returns, turnover_series),
+        "costs": cost_frame.sort_index(),
+        "sector_exposure": sector_frame,
+        "rebalance_log": pd.DataFrame(rebalance_log),
+        "metrics": summarize_returns(returns, turnover_series, benchmark),
+        "settings": {
+            "top_n": n,
+            "commission_bps": commission_bps,
+            "slippage_bps": slippage_bps,
+            "rebalance_delay_days": rebalance_delay_days,
+            "benchmark_ticker": benchmark_ticker,
+        },
     }

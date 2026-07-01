@@ -51,3 +51,20 @@ def test_optimized_portfolio_endpoint_runs_offline():
     assert response.json()["source"] == "sample"
     assert response.json()["positions"]
     assert response.json()["cash_weight"] >= 0
+
+
+def test_backtest_detail_exposes_benchmark_cost_and_risk_series():
+    client = TestClient(app)
+
+    response = client.get("/backtests/sample-top-10?source=sample")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["metrics"]["benchmark_cagr"] is not None
+    assert body["settings"]["rebalance_delay_days"] == 1
+    assert body["benchmark_returns"]
+    assert body["excess_returns"]
+    assert body["turnover"]
+    assert body["costs"]
+    assert body["sector_exposure"]
+    assert body["rebalance_log"]
