@@ -584,35 +584,61 @@ function App() {
   const loadDashboard = async () => {
     setIsLoading(true);
     setError(undefined);
-    try {
-      const [
-        rankingResponse,
-        backtestResponse,
-        portfolioResponse,
-        modelResponse,
-        persistenceResponse,
-      ] = await Promise.all([
-        fetchJson<{ rankings: Ranking[] }>(`/rankings/latest?source=${source}&limit=10`),
-        fetchJson<Backtest[]>(`/backtests?source=${source}`),
-        fetchJson<Portfolio>(`/portfolio/latest?source=${source}&limit=10`),
-        fetchJson<{ models: ModelRow[] }>(`/models?source=${source}`),
-        fetchJson<PersistenceStatus>("/persistence/status"),
-      ]);
+    const requests = [
+      {
+        label: "rankings",
+        load: () => fetchJson<{ rankings: Ranking[] }>(`/rankings/latest?source=${source}&limit=10`),
+        apply: (response: { rankings: Ranking[] }) => setRankings(response.rankings),
+      },
+      {
+        label: "backtests",
+        load: () => fetchJson<Backtest[]>(`/backtests?source=${source}`),
+        apply: (response: Backtest[]) => {
+          setBacktests(response);
+          setSelectedBacktestId((current) => (
+            response.some((row) => row.id === current) ? current : response[0]?.id
+          ));
+          setBacktestDetail(undefined);
+        },
+      },
+      {
+        label: "portfolio",
+        load: () => fetchJson<Portfolio>(`/portfolio/latest?source=${source}&limit=10`),
+        apply: (response: Portfolio) => setPortfolio(response),
+      },
+      {
+        label: "models",
+        load: () => fetchJson<{ models: ModelRow[] }>(`/models?source=${source}`),
+        apply: (response: { models: ModelRow[] }) => setModels(response.models),
+      },
+      {
+        label: "persistence",
+        load: () => fetchJson<PersistenceStatus>("/persistence/status"),
+        apply: (response: PersistenceStatus) => setPersistence(response),
+      },
+    ] as const;
 
-      setRankings(rankingResponse.rankings);
-      setBacktests(backtestResponse);
-      setSelectedBacktestId((current) => (
-        backtestResponse.some((row) => row.id === current) ? current : backtestResponse[0]?.id
-      ));
-      setPortfolio(portfolioResponse);
-      setModels(modelResponse.models);
-      setPersistence(persistenceResponse);
-      setBacktestDetail(undefined);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to load dashboard data");
-    } finally {
-      setIsLoading(false);
+    const results = await Promise.allSettled(
+      requests.map(async (request) => ({
+        label: request.label,
+        value: await request.load(),
+      })),
+    );
+
+    const failures: string[] = [];
+    results.forEach((result, index) => {
+      if (result.status === "fulfilled") {
+        requests[index].apply(result.value.value as never);
+      } else {
+        const reason = result.reason instanceof Error ? result.reason.message : "request failed";
+        failures.push(`${requests[index].label}: ${reason}`);
+      }
+    });
+
+    if (failures.length) {
+      setError(`Some dashboard data could not load. ${failures.join(" | ")}`);
     }
+    setIsLoading(false);
   };
 
   const persistSnapshot = async () => {
