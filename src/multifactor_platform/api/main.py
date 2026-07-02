@@ -212,6 +212,7 @@ def _build_backtest_strategies(source: DataSource, prices: pd.DataFrame, feature
             "result": run_top_n_backtest(
                 config["rankings"],
                 prices,
+                features=features,
                 n=config["n"],
                 construction=config["construction"],
                 rebalance_delay_days=1,
@@ -281,6 +282,14 @@ def get_backtest(backtest_id: str, source: DataSource = "sample"):
                 "weight": row["weight"],
             }
             for _, row in result["sector_exposure"].iterrows()
+        ],
+        "factor_exposure": [
+            {
+                "date": row["date"].date().isoformat(),
+                "factor": row["factor"],
+                "exposure": row["exposure"],
+            }
+            for _, row in result["factor_exposure"].iterrows()
         ],
         "holdings": [
             {
@@ -370,6 +379,9 @@ def models(source: DataSource = "sample"):
                 "status": result["status"],
                 "feature_count": result["feature_count"],
                 "fold_count": len(result["folds"]),
+                "train_rank_ic": result.get("train_metrics", {}).get("rank_ic"),
+                "placebo_rank_ic": result.get("placebo_metrics", {}).get("rank_ic"),
+                "diagnostic_warnings": result.get("diagnostic_warnings", []),
                 **result["metrics"],
             }
             for result in results
@@ -389,6 +401,10 @@ def model_walk_forward(source: DataSource = "sample"):
                 "engine": result["engine"],
                 "status": result["status"],
                 "metrics": result["metrics"],
+                "train_metrics": result.get("train_metrics", {}),
+                "placebo_metrics": result.get("placebo_metrics", {}),
+                "yearly_rank_ic": _json_records(result.get("yearly_rank_ic", pd.DataFrame())),
+                "diagnostic_warnings": result.get("diagnostic_warnings", []),
                 "folds": _json_records(result["folds"]),
             }
             for result in results

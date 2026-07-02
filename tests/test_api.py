@@ -67,6 +67,7 @@ def test_backtest_detail_exposes_benchmark_cost_and_risk_series():
     assert body["turnover"]
     assert body["costs"]
     assert body["sector_exposure"]
+    assert body["factor_exposure"]
     assert body["holdings"]
     assert body["rebalance_log"]
     assert "warnings" in body
@@ -102,3 +103,19 @@ def test_models_endpoint_runs_walk_forward_models_offline():
     linear = next(row for row in body["models"] if row["name"] == "Linear Regression")
     assert linear["fold_count"] > 0
     assert linear["rank_ic"] is not None
+    assert linear["train_rank_ic"] is not None
+    assert linear["placebo_rank_ic"] is not None
+    assert "diagnostic_warnings" in linear
+
+
+def test_model_walk_forward_exposes_honest_diagnostics():
+    client = TestClient(app)
+
+    response = client.get("/models/walk-forward?source=sample")
+
+    assert response.status_code == 200
+    linear = next(row for row in response.json()["models"] if row["name"] == "Linear Regression")
+    assert "train_metrics" in linear
+    assert "placebo_metrics" in linear
+    assert "yearly_rank_ic" in linear
+    assert "diagnostic_warnings" in linear

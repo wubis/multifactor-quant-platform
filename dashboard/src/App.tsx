@@ -63,6 +63,7 @@ type BacktestDetail = Backtest & {
     total_cost: number;
   }[];
   sector_exposure: { date: string; sector: string; weight: number }[];
+  factor_exposure: { date: string; factor: string; exposure: number }[];
   holdings: { date: string; ticker: string; sector: string; rank: number; weight: number }[];
   rebalance_log: {
     date: string;
@@ -90,6 +91,9 @@ type ModelRow = {
   hit_rate: number | null;
   rmse: number | null;
   r2: number | null;
+  train_rank_ic: number | null;
+  placebo_rank_ic: number | null;
+  diagnostic_warnings: string[];
   fold_count: number;
   feature_count: number;
   status: string;
@@ -181,6 +185,13 @@ function latestSectorExposure(detail?: BacktestDetail) {
     ? detail.sector_exposure[detail.sector_exposure.length - 1].date
     : undefined;
   return (detail?.sector_exposure || []).filter((row) => row.date === latestDate);
+}
+
+function latestFactorExposure(detail?: BacktestDetail) {
+  const latestDate = detail?.factor_exposure?.length
+    ? detail.factor_exposure[detail.factor_exposure.length - 1].date
+    : undefined;
+  return (detail?.factor_exposure || []).filter((row) => row.date === latestDate);
 }
 
 async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
@@ -481,9 +492,12 @@ function ModelsView({ models }: { models: ModelRow[] }) {
             <th>Model</th>
             <th>Engine</th>
             <th>Rank IC</th>
+            <th>Train IC</th>
+            <th>Placebo IC</th>
             <th>Hit Rate</th>
             <th>RMSE</th>
             <th>Folds</th>
+            <th>Warnings</th>
             <th>Status</th>
           </tr>
         </thead>
@@ -493,9 +507,12 @@ function ModelsView({ models }: { models: ModelRow[] }) {
               <td>{model.name}</td>
               <td>{model.engine}</td>
               <td>{model.rank_ic === null ? "n/a" : formatNumber(model.rank_ic, 3)}</td>
+              <td>{model.train_rank_ic === null ? "n/a" : formatNumber(model.train_rank_ic, 3)}</td>
+              <td>{model.placebo_rank_ic === null ? "n/a" : formatNumber(model.placebo_rank_ic, 3)}</td>
               <td>{model.hit_rate === null ? "n/a" : formatPercent(model.hit_rate)}</td>
               <td>{model.rmse === null ? "n/a" : formatNumber(model.rmse, 4)}</td>
               <td>{model.fold_count}</td>
+              <td>{model.diagnostic_warnings?.length ? model.diagnostic_warnings.join("; ") : "None"}</td>
               <td><span className="status-pill">{model.status}</span></td>
             </tr>
           ))}
@@ -515,6 +532,7 @@ function RiskView({
   detail?: BacktestDetail;
 }) {
   const strategyExposure = latestSectorExposure(detail);
+  const factorExposure = latestFactorExposure(detail);
   const strategyHoldings = latestHoldings(detail);
   const exposureSource = strategyExposure.length ? strategyExposure : (portfolio?.sector_exposure || []);
   const positionSource = strategyHoldings.length ? strategyHoldings : (portfolio?.positions || []);
@@ -538,6 +556,22 @@ function RiskView({
             </BarChart>
           </ResponsiveContainer>
         </div>
+      </section>
+      <section className="panel">
+        <h2>{selectedBacktest ? "Latest Factor Exposures" : "Factor Exposures"}</h2>
+        <table>
+          <thead>
+            <tr><th>Factor</th><th>Exposure</th></tr>
+          </thead>
+          <tbody>
+            {factorExposure.map((row) => (
+              <tr key={row.factor}>
+                <td>{row.factor}</td>
+                <td>{formatNumber(row.exposure, 2)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </section>
       <section className="panel">
         <h2>{selectedBacktest ? "Selected Strategy Positions" : "Latest Positions"}</h2>

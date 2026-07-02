@@ -7,6 +7,7 @@ from multifactor_platform.backtesting.portfolio import (
     equal_weight_sector_neutral_top_n,
     equal_weight_top_n,
 )
+from multifactor_platform.risk.exposures import compute_factor_exposures
 
 
 def monthly_signal_dates(ranked: pd.DataFrame) -> pd.DatetimeIndex:
@@ -159,6 +160,7 @@ def _backtest_warnings(
 def run_top_n_backtest(
     ranked: pd.DataFrame,
     prices: pd.DataFrame,
+    features: pd.DataFrame | None = None,
     n: int = 50,
     construction: str = "top_n",
     commission_bps: float = 1.0,
@@ -270,6 +272,11 @@ def run_top_n_backtest(
     )
     rebalance_frame = pd.DataFrame(rebalance_log)
     excess_returns = returns.subtract(benchmark.reindex(returns.index).fillna(0), fill_value=0)
+    factor_exposure_frame = (
+        compute_factor_exposures(holdings_frame, features)
+        if features is not None
+        else pd.DataFrame(columns=["date", "factor", "exposure"])
+    )
 
     return {
         "returns": returns,
@@ -278,6 +285,7 @@ def run_top_n_backtest(
         "turnover": turnover_series,
         "costs": cost_frame.sort_index(),
         "sector_exposure": sector_frame,
+        "factor_exposure": factor_exposure_frame,
         "holdings": holdings_frame,
         "rebalance_log": rebalance_frame,
         "metrics": summarize_returns(returns, turnover_series, benchmark),

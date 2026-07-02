@@ -209,6 +209,56 @@ def evaluate_predictions(predictions: pd.DataFrame) -> dict[str, float]:
     }
 
 
+def yearly_rank_ic(predictions: pd.DataFrame) -> pd.DataFrame:
+    rank_ic = rank_ic_by_date(predictions)
+    if rank_ic.empty:
+        return pd.DataFrame(columns=["year", "rank_ic", "observations"])
+
+    rows = (
+        rank_ic.rename("rank_ic")
+        .to_frame()
+        .assign(year=lambda frame: frame.index.year)
+        .groupby("year")
+        .agg(rank_ic=("rank_ic", "mean"), observations=("rank_ic", "size"))
+        .reset_index()
+    )
+    return rows
+
+
+def diagnostic_warnings(metrics: dict, placebo_metrics: dict, train_metrics: dict | None = None) -> list[str]:
+    warnings = []
+    rank_ic = metrics.get("rank_ic", 0.0) or 0.0
+    rank_ic_std = metrics.get("rank_ic_std", 0.0) or 0.0
+    placebo_rank_ic = placebo_metrics.get("rank_ic", 0.0) or 0.0
+
+    if abs(rank_ic) < 0.01:
+        warnings.append("Out-of-sample Rank IC is close to zero.")
+    if rank_ic_std and abs(rank_ic) < rank_ic_std * 0.25:
+        warnings.append("Rank IC is small relative to its own volatility.")
+    if abs(rank_ic - placebo_rank_ic) < 0.01:
+        warnings.append("Model Rank IC is close to shuffled-label placebo.")
+    if train_metrics is not None:
+        train_rank_ic = train_metrics.get("rank_ic", 0.0) or 0.0
+        if train_rank_ic - rank_ic > 0.05:
+            warnings.append("Train Rank IC is materially higher than out-of-sample Rank IC.")
+    return warnings
+
+
+def placebo_predictions(predictions: pd.DataFrame, random_state: int = 7) -> pd.DataFrame:
+    if predictions.empty:
+        return predictions.copy()
+
+    rng = np.random.default_rng(random_state)
+    output = predictions.copy()
+    shuffled = []
+    for _, frame in output.groupby("date", sort=False):
+        values = frame["prediction"].to_numpy().copy()
+        rng.shuffle(values)
+        shuffled.extend(values)
+    output["prediction"] = shuffled
+    return output
+
+
 def walk_forward_validate_model(
     model_frame: pd.DataFrame,
     model_spec: ModelSpec,
@@ -219,6 +269,7 @@ def walk_forward_validate_model(
     ]
     splits = build_walk_forward_splits(model_frame)
     predictions = []
+    train_predictions = []
     fold_rows = []
 
     for fold_number, (train_end, validation_start, validation_end) in enumerate(splits, start=1):
@@ -231,6 +282,11 @@ def walk_forward_validate_model(
 
         estimator = model_spec.factory()
         estimator.fit(train[feature_columns], train[TARGET_COLUMN])
+        train_fold_predictions = train[["date", "ticker", TARGET_COLUMN]].copy()
+        train_fold_predictions["prediction"] = estimator.predict(train[feature_columns])
+        train_fold_predictions["fold"] = fold_number
+        train_predictions.append(train_fold_predictions)
+
         validation_predictions = validation[["date", "ticker", TARGET_COLUMN]].copy()
         validation_predictions["prediction"] = estimator.predict(validation[feature_columns])
         validation_predictions["fold"] = fold_number
@@ -254,6 +310,14 @@ def walk_forward_validate_model(
         if predictions
         else pd.DataFrame(columns=["date", "ticker", TARGET_COLUMN, "prediction", "fold"])
     )
+    train_prediction_frame = (
+        pd.concat(train_predictions, ignore_index=True)
+        if train_predictions
+        else pd.DataFrame(columns=["date", "ticker", TARGET_COLUMN, "prediction", "fold"])
+    )
+    metrics = evaluate_predictions(prediction_frame)
+    train_metrics = evaluate_predictions(train_prediction_frame)
+    placebo_metrics = evaluate_predictions(placebo_predictions(prediction_frame))
     return {
         "name": model_spec.name,
         "engine": model_spec.engine,
@@ -261,7 +325,11 @@ def walk_forward_validate_model(
         "feature_count": len(feature_columns),
         "folds": pd.DataFrame(fold_rows),
         "predictions": prediction_frame,
-        "metrics": evaluate_predictions(prediction_frame),
+        "train_metrics": train_metrics,
+        "placebo_metrics": placebo_metrics,
+        "yearly_rank_ic": yearly_rank_ic(prediction_frame),
+        "diagnostic_warnings": diagnostic_warnings(metrics, placebo_metrics, train_metrics),
+        "metrics": metrics,
     }
 
 
@@ -278,6 +346,8 @@ def evaluate_weighted_score(features: pd.DataFrame) -> dict:
         on=["date", "ticker"],
         how="inner",
     )
+    metrics = evaluate_predictions(predictions)
+    placebo_metrics = evaluate_predictions(placebo_predictions(predictions))
     return {
         "name": "Weighted Score",
         "engine": "manual_factor_weights",
@@ -285,7 +355,11 @@ def evaluate_weighted_score(features: pd.DataFrame) -> dict:
         "feature_count": 5,
         "folds": pd.DataFrame(),
         "predictions": predictions,
-        "metrics": evaluate_predictions(predictions),
+        "train_metrics": {},
+        "placebo_metrics": placebo_metrics,
+        "yearly_rank_ic": yearly_rank_ic(predictions),
+        "diagnostic_warnings": diagnostic_warnings(metrics, placebo_metrics),
+        "metrics": metrics,
     }
 
 

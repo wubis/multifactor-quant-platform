@@ -28,6 +28,10 @@ def test_linear_model_walk_forward_validation_runs():
     assert result["status"] == "Active"
     assert not result["folds"].empty
     assert not result["predictions"].empty
+    assert result["train_metrics"]["rank_ic"] is not None
+    assert result["placebo_metrics"]["rank_ic"] is not None
+    assert "yearly_rank_ic" in result
+    assert "diagnostic_warnings" in result
     assert "rank_ic" in result["metrics"]
 
 
