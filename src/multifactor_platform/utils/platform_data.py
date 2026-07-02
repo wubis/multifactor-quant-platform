@@ -48,7 +48,12 @@ def _fill_missing_fundamentals(fundamentals: pd.DataFrame) -> pd.DataFrame:
 
 
 def _finalize_pipeline(prices: pd.DataFrame, fundamentals: pd.DataFrame):
+    price_attrs = dict(prices.attrs)
+    fundamental_attrs = dict(fundamentals.attrs)
     prepared_prices = prepare_prices(prices)
+    prepared_prices.attrs.update(price_attrs)
+    prepared_prices.attrs["fundamental_failed_tickers"] = fundamental_attrs.get("failed_tickers", [])
+    prepared_prices.attrs["fundamental_cache_hit"] = fundamental_attrs.get("cache_hit")
     prepared_fundamentals = prepare_fundamentals(_fill_missing_fundamentals(fundamentals))
     features = build_feature_frame(prepared_prices, prepared_fundamentals)
     available_required = [column for column in MIN_RANKING_COLUMNS if column in features.columns]

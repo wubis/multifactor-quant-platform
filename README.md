@@ -42,7 +42,8 @@ The default live demo uses `yfinance`. The deterministic `sample` source is kept
 
 ## Current Capabilities
 
-- Live yfinance ingestion for prices and current fundamentals
+- Live yfinance ingestion for prices and current fundamentals across a 100-stock large-cap universe
+- Batched yfinance downloads with local Parquet caching when pandas has a parquet engine installed
 - Deterministic sample data path for offline development
 - Price validation and data-quality reporting
 - Momentum, volatility, beta, value, quality, size, and liquidity features
@@ -155,9 +156,9 @@ Tracked metrics:
 
 The backtest detail API also returns date-level strategy returns, SPY returns, excess returns, turnover, cost breakdowns, sector exposure, and the rebalance log showing signal date, trade date, and next trade date.
 
-Implemented strategy variants include the original weighted-score top-10 portfolio, a sector-neutral weighted-score portfolio, and out-of-sample Random Forest / Gradient Boosting portfolios built from walk-forward model predictions.
+Implemented strategy variants include the original weighted-score top-10 portfolio, a sector-neutral weighted-score portfolio, and out-of-sample Linear Regression, Elastic Net, Random Forest, and Gradient Boosting portfolios built from walk-forward model predictions.
 
-The yfinance path uses five years of price history by default. Backtest responses include warnings when the validation period is short, when holdings do not change after the initial rebalance, or when a strategy selects most of the available universe. The detail response also includes rebalance-level holdings so results can be inspected instead of treated as a black box.
+The yfinance path uses five years of price history by default over a curated 100-stock U.S. large-cap universe, plus SPY as the benchmark. Downloads are batched so partial vendor failures can be reported ticker-by-ticker. Price and fundamental snapshots are cached under `data/external/yfinance/` as Parquet files when the local pandas environment supports Parquet; if not, the pipeline still runs without cache persistence. Backtest responses include warnings when the validation period is short, when holdings do not change after the initial rebalance, or when a strategy selects most of the available universe. The detail response also includes rebalance-level holdings so results can be inspected instead of treated as a black box.
 
 ## Data Quality And Research Caveats
 
@@ -167,6 +168,12 @@ The project includes `GET /data-quality/report?source=...` and a matching ingest
 - duplicate ticker/date rows
 - non-positive prices
 - missing adjusted close values
+- zero or missing volume rows
+- daily adjusted-return outliers
+- stale latest price dates
+- expected-vs-observed ticker coverage
+- failed yfinance price/fundamental tickers
+- whether the response came from local cache
 - short ticker histories
 - whether the source should be treated as demo-grade
 
