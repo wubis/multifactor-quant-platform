@@ -21,7 +21,7 @@ from multifactor_platform.db.models import (
     utc_now,
 )
 from multifactor_platform.db.session import build_engine, build_session_factory
-from multifactor_platform.ingestion.universe import load_default_universe
+from multifactor_platform.ingestion.universe import load_default_universe, load_large_cap_universe
 from multifactor_platform.utils.platform_data import DataSource, load_platform_data
 
 
@@ -74,7 +74,13 @@ def _security_id_map(session: Session) -> dict[str, int]:
 
 def persist_securities(session: Session) -> dict[str, int]:
     existing = _security_id_map(session)
-    for security in load_default_universe():
+    settings = get_settings()
+    securities = {
+        security.ticker: security
+        for security in load_default_universe()
+        + load_large_cap_universe(limit=settings.yfinance_universe_limit)
+    }
+    for security in securities.values():
         if security.ticker in existing:
             row = session.get(Security, existing[security.ticker])
             if row is not None:

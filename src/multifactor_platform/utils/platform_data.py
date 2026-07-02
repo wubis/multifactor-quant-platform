@@ -3,10 +3,12 @@ from typing import Literal
 
 import pandas as pd
 
+from multifactor_platform.config import get_settings
 from multifactor_platform.features.pipeline import build_feature_frame
 from multifactor_platform.ingestion.fundamentals import prepare_fundamentals
 from multifactor_platform.ingestion.prices import prepare_prices
 from multifactor_platform.ingestion.sample_data import make_sample_fundamentals, make_sample_prices
+from multifactor_platform.ingestion.universe import load_large_cap_universe
 from multifactor_platform.ingestion.yfinance_client import (
     fetch_yfinance_fundamentals,
     fetch_yfinance_prices,
@@ -68,9 +70,22 @@ def load_sample_platform_data():
 
 
 @lru_cache
-def load_yfinance_platform_data(period: str = "5y"):
-    prices = fetch_yfinance_prices(period=period)
-    fundamentals = fetch_yfinance_fundamentals()
+def load_yfinance_platform_data(
+    period: str | None = None,
+    universe_limit: int | None = None,
+    batch_size: int | None = None,
+):
+    settings = get_settings()
+    selected_period = period or settings.yfinance_period
+    selected_universe_limit = universe_limit or settings.yfinance_universe_limit
+    selected_batch_size = batch_size or settings.yfinance_batch_size
+    universe = load_large_cap_universe(limit=selected_universe_limit)
+    prices = fetch_yfinance_prices(
+        universe=universe,
+        period=selected_period,
+        batch_size=selected_batch_size,
+    )
+    fundamentals = fetch_yfinance_fundamentals(universe=universe)
     fundamentals["date"] = prices["date"].min()
     return _finalize_pipeline(prices, fundamentals)
 

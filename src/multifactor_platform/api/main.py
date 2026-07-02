@@ -64,6 +64,11 @@ def root() -> dict:
             "/persistence/snapshot?source=yfinance",
         ],
         "data_sources": ["yfinance", "sample"],
+        "yfinance_defaults": {
+            "period": settings.yfinance_period,
+            "universe_limit": settings.yfinance_universe_limit,
+            "batch_size": settings.yfinance_batch_size,
+        },
     }
 
 

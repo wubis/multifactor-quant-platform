@@ -20,6 +20,7 @@ def test_root_endpoint_lists_entry_points():
     assert response.status_code == 200
     assert response.json()["docs"] == "/docs"
     assert "/rankings/latest?source=yfinance" in response.json()["endpoints"]
+    assert response.json()["yfinance_defaults"]["period"] == "10y"
 
 
 def test_sample_rankings_endpoint_runs_offline():
@@ -62,6 +63,7 @@ def test_backtest_detail_exposes_benchmark_cost_and_risk_series():
     body = response.json()
     assert body["metrics"]["benchmark_cagr"] is not None
     assert body["settings"]["rebalance_delay_days"] == 1
+    assert "price_ticker_count" in body["settings"]
     assert body["benchmark_returns"]
     assert body["excess_returns"]
     assert body["turnover"]

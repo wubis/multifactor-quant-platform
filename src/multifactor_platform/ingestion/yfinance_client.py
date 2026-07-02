@@ -12,6 +12,8 @@ YFINANCE_TICKER_ALIASES = {
 }
 
 DEFAULT_CACHE_DIR = Path("data/external/yfinance")
+DEFAULT_YFINANCE_PERIOD = "10y"
+DEFAULT_YFINANCE_UNIVERSE_LIMIT = 100
 
 
 def to_yfinance_ticker(ticker: str) -> str:
@@ -68,7 +70,7 @@ def _ticker_frame(downloaded: pd.DataFrame, yf_ticker: str) -> pd.DataFrame:
 
 def fetch_yfinance_prices(
     universe: list[SecurityDefinition] | None = None,
-    period: str = "5y",
+    period: str = DEFAULT_YFINANCE_PERIOD,
     batch_size: int = 25,
     retries: int = 2,
     cache_dir: str | Path | None = DEFAULT_CACHE_DIR,
@@ -80,7 +82,7 @@ def fetch_yfinance_prices(
             "yfinance is not installed. Run `pip install -e \".[dev]\"` from the project root."
         ) from exc
 
-    universe = universe or load_large_cap_universe(limit=100)
+    universe = universe or load_large_cap_universe(limit=DEFAULT_YFINANCE_UNIVERSE_LIMIT)
     yf_to_security = {to_yfinance_ticker(security.ticker): security for security in universe}
     tickers = list(yf_to_security)
     if cache_dir is not None:
@@ -161,6 +163,7 @@ def fetch_yfinance_prices(
             "batch_failures": batch_failures,
             "batch_size": batch_size,
             "period": period,
+            "universe_limit": len([security for security in universe if security.ticker != "SPY"]),
         }
     )
     if cache_dir is not None:
@@ -181,7 +184,7 @@ def fetch_yfinance_fundamentals(
             "yfinance is not installed. Run `pip install -e \".[dev]\"` from the project root."
         ) from exc
 
-    universe = universe or load_large_cap_universe(limit=100)
+    universe = universe or load_large_cap_universe(limit=DEFAULT_YFINANCE_UNIVERSE_LIMIT)
     tickers = [security.ticker for security in universe if security.ticker != "SPY"]
     if cache_dir is not None:
         cache_root = Path(cache_dir)
@@ -237,6 +240,7 @@ def fetch_yfinance_fundamentals(
             "expected_tickers": tickers,
             "expected_ticker_count": len(tickers),
             "failed_tickers": sorted(failed_tickers),
+            "universe_limit": len(tickers),
         }
     )
     if cache_dir is not None:

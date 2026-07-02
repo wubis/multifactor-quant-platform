@@ -51,6 +51,14 @@ type Backtest = {
 };
 
 type BacktestDetail = Backtest & {
+  settings: {
+    top_n: number;
+    construction: string;
+    commission_bps: number;
+    slippage_bps: number;
+    rebalance_delay_days: number;
+    benchmark_ticker: string;
+  };
   returns: { date: string; return: number }[];
   benchmark_returns: { date: string; return: number }[];
   excess_returns: { date: string; return: number }[];
@@ -126,6 +134,43 @@ function formatPercent(value: number | undefined, digits = 1) {
 function formatNumber(value: number | undefined, digits = 2) {
   if (value === undefined || Number.isNaN(value)) return "n/a";
   return value.toFixed(digits);
+}
+
+function metricTone(label: string, value?: number) {
+  if (value === undefined || Number.isNaN(value)) return "neutral";
+  if (["Alpha", "CAGR", "Sharpe", "Info Ratio"].includes(label)) {
+    return value > 0 ? "positive" : value < 0 ? "negative" : "neutral";
+  }
+  if (label === "Max Drawdown") return value < -0.15 ? "negative" : value < -0.08 ? "caution" : "positive";
+  if (label === "Rebalance Turnover") return value > 0.5 ? "negative" : value > 0.25 ? "caution" : "positive";
+  if (label === "Tracking Error") return value > 0.1 ? "caution" : "neutral";
+  return "neutral";
+}
+
+function warningLabel(warning: string) {
+  if (warning.includes("36 months") || warning.includes("monthly observations")) return "Short history";
+  if (warning.includes("turnover")) return "High turnover";
+  if (warning.includes("Train Rank IC")) return "Train/OOS gap";
+  if (warning.includes("placebo")) return "Placebo check";
+  if (warning.includes("Rank IC")) return "Weak signal";
+  return warning.length > 28 ? `${warning.slice(0, 25)}...` : warning;
+}
+
+function modelSlug(id?: string) {
+  if (!id) return "Weighted";
+  if (id.includes("linear-regression")) return "Linear";
+  if (id.includes("elastic-net")) return "Elastic Net";
+  if (id.includes("random-forest")) return "Random Forest";
+  if (id.includes("gradient-boosting")) return "Gradient Boosting";
+  return "Weighted";
+}
+
+function topFactorExposure(detail?: BacktestDetail) {
+  const exposures = latestFactorExposure(detail);
+  if (!exposures.length) return undefined;
+  return exposures.reduce((best, row) => (
+    Math.abs(row.exposure) > Math.abs(best.exposure) ? row : best
+  ));
 }
 
 function buildEquityCurve(returns: BacktestDetail["returns"] = []) {
@@ -204,16 +249,70 @@ async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 function MetricGrid({ metrics }: { metrics?: Metrics }) {
+  const items = [
+    { label: "CAGR", value: metrics?.cagr, display: formatPercent(metrics?.cagr) },
+    { label: "SPY CAGR", value: metrics?.benchmark_cagr, display: formatPercent(metrics?.benchmark_cagr) },
+    { label: "Alpha", value: metrics?.alpha, display: formatPercent(metrics?.alpha) },
+    { label: "Sharpe", value: metrics?.sharpe, display: formatNumber(metrics?.sharpe) },
+    { label: "Info Ratio", value: metrics?.information_ratio, display: formatNumber(metrics?.information_ratio) },
+    { label: "Max Drawdown", value: metrics?.max_drawdown, display: formatPercent(metrics?.max_drawdown) },
+    {
+      label: "Rebalance Turnover",
+      value: metrics?.average_rebalance_turnover,
+      display: formatPercent(metrics?.average_rebalance_turnover, 0),
+    },
+    { label: "Tracking Error", value: metrics?.tracking_error, display: formatPercent(metrics?.tracking_error) },
+  ];
   return (
     <section className="metrics">
-      <div><span>CAGR</span><strong>{formatPercent(metrics?.cagr)}</strong></div>
-      <div><span>SPY CAGR</span><strong>{formatPercent(metrics?.benchmark_cagr)}</strong></div>
-      <div><span>Alpha</span><strong>{formatPercent(metrics?.alpha)}</strong></div>
-      <div><span>Sharpe</span><strong>{formatNumber(metrics?.sharpe)}</strong></div>
-      <div><span>Info Ratio</span><strong>{formatNumber(metrics?.information_ratio)}</strong></div>
-      <div><span>Max Drawdown</span><strong>{formatPercent(metrics?.max_drawdown)}</strong></div>
-      <div><span>Rebalance Turnover</span><strong>{formatPercent(metrics?.average_rebalance_turnover, 0)}</strong></div>
-      <div><span>Tracking Error</span><strong>{formatPercent(metrics?.tracking_error)}</strong></div>
+      {items.map((item) => (
+        <div className={`metric-card ${metricTone(item.label, item.value)}`} key={item.label}>
+          <span>{item.label}</span>
+          <strong>{item.display}</strong>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+function StrategySummary({
+  selectedBacktest,
+  detail,
+}: {
+  selectedBacktest?: Backtest;
+  detail?: BacktestDetail;
+}) {
+  const holdings = latestHoldings(detail);
+  const topExposure = topFactorExposure(detail);
+  const warnings = detail?.warnings || selectedBacktest?.warnings || [];
+
+  return (
+    <section className="strategy-summary">
+      <div>
+        <span>Selected Strategy</span>
+        <strong>{selectedBacktest?.name || "n/a"}</strong>
+      </div>
+      <div>
+        <span>Engine</span>
+        <strong>{modelSlug(selectedBacktest?.id)}</strong>
+      </div>
+      <div>
+        <span>Months</span>
+        <strong>{selectedBacktest?.periods || 0}</strong>
+      </div>
+      <div>
+        <span>Holdings</span>
+        <strong>{holdings.length || detail?.settings?.top_n || "n/a"}</strong>
+      </div>
+      <div>
+        <span>Top Tilt</span>
+        <strong>{topExposure ? `${topExposure.factor} ${formatNumber(topExposure.exposure, 2)}` : "n/a"}</strong>
+      </div>
+      <div className="summary-warnings">
+        {warnings.length ? warnings.slice(0, 3).map((warning) => (
+          <span className="warning-chip" key={warning} title={warning}>{warningLabel(warning)}</span>
+        )) : <span className="ok-chip">No warnings</span>}
+      </div>
     </section>
   );
 }
@@ -234,6 +333,9 @@ function OverviewView({
     momentum: Number(row.momentum_score.toFixed(2)),
   }));
   const holdings = latestHoldings(detail);
+  const topExposure = topFactorExposure(detail);
+  const latestExposure = latestSectorExposure(detail);
+  const sectorCount = new Set(latestExposure.map((row) => row.sector)).size;
   const isWeightedStrategy = selectedBacktest
     ? !["linear-regression", "elastic-net", "random-forest", "gradient-boosting"].some((slug) =>
         selectedBacktest.id.includes(slug),
@@ -282,6 +384,9 @@ function OverviewView({
               <tr><th>Strategy</th><td>{selectedBacktest?.name || "n/a"}</td></tr>
               <tr><th>Backtest Months</th><td>{selectedBacktest?.periods || 0}</td></tr>
               <tr><th>Latest Holdings</th><td>{holdings.length}</td></tr>
+              <tr><th>Sector Count</th><td>{sectorCount || "n/a"}</td></tr>
+              <tr><th>Top Factor Tilt</th><td>{topExposure ? `${topExposure.factor} ${formatNumber(topExposure.exposure, 2)}` : "n/a"}</td></tr>
+              <tr><th>Warnings</th><td>{detail?.warnings?.length || selectedBacktest?.warnings?.length || 0}</td></tr>
               <tr><th>Avg Rebalance Turnover</th><td>{formatPercent(selectedBacktest?.metrics.average_rebalance_turnover, 1)}</td></tr>
               <tr><th>Information Ratio</th><td>{formatNumber(selectedBacktest?.metrics.information_ratio)}</td></tr>
             </tbody>
@@ -307,15 +412,19 @@ function BacktestsView({ backtests, detail }: { backtests: Backtest[]; detail?: 
   const sectorHistory = buildSectorHistory(detail);
   const latestHoldingDate = detail?.holdings?.length ? detail.holdings[detail.holdings.length - 1].date : undefined;
   const latestHoldings = (detail?.holdings || []).filter((row) => row.date === latestHoldingDate);
+  const bestInfoRatio = Math.max(...backtests.map((row) => row.metrics.information_ratio || -Infinity));
+  const bestCagr = Math.max(...backtests.map((row) => row.metrics.cagr || -Infinity));
 
   return (
     <div className="panel-grid">
       {!!detail?.warnings?.length && (
         <section className="panel wide-panel warning-panel">
           <h2>Backtest Warnings</h2>
-          {detail.warnings.map((warning) => (
-            <p key={warning}>{warning}</p>
-          ))}
+          <div className="chip-row">
+            {detail.warnings.map((warning) => (
+              <span className="warning-chip" key={warning} title={warning}>{warningLabel(warning)}</span>
+            ))}
+          </div>
         </section>
       )}
       <section className="panel wide-panel">
@@ -326,14 +435,14 @@ function BacktestsView({ backtests, detail }: { backtests: Backtest[]; detail?: 
           </thead>
           <tbody>
             {backtests.map((row) => (
-              <tr key={row.id}>
+              <tr className={row.id === detail?.id ? "selected-row" : ""} key={row.id}>
                 <td>{row.name}</td>
                 <td>{row.periods}</td>
-                <td>{formatPercent(row.metrics.cagr)}</td>
+                <td className={row.metrics.cagr === bestCagr ? "best-cell" : ""}>{formatPercent(row.metrics.cagr)}</td>
                 <td>{formatPercent(row.metrics.benchmark_cagr)}</td>
-                <td>{formatPercent(row.metrics.alpha)}</td>
+                <td className={metricTone("Alpha", row.metrics.alpha)}>{formatPercent(row.metrics.alpha)}</td>
                 <td>{formatNumber(row.metrics.sharpe)}</td>
-                <td>{formatNumber(row.metrics.information_ratio)}</td>
+                <td className={row.metrics.information_ratio === bestInfoRatio ? "best-cell" : ""}>{formatNumber(row.metrics.information_ratio)}</td>
               </tr>
             ))}
           </tbody>
@@ -483,42 +592,60 @@ function BacktestsView({ backtests, detail }: { backtests: Backtest[]; detail?: 
 }
 
 function ModelsView({ models }: { models: ModelRow[] }) {
+  const bestRankIc = Math.max(...models.map((model) => model.rank_ic ?? -Infinity));
+  const diagnostics = models.filter((model) => model.diagnostic_warnings?.length);
+
   return (
-    <section className="panel">
-      <h2>Model Comparison</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>Model</th>
-            <th>Engine</th>
-            <th>Rank IC</th>
-            <th>Train IC</th>
-            <th>Placebo IC</th>
-            <th>Hit Rate</th>
-            <th>RMSE</th>
-            <th>Folds</th>
-            <th>Warnings</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {models.map((model) => (
-            <tr key={model.name}>
-              <td>{model.name}</td>
-              <td>{model.engine}</td>
-              <td>{model.rank_ic === null ? "n/a" : formatNumber(model.rank_ic, 3)}</td>
-              <td>{model.train_rank_ic === null ? "n/a" : formatNumber(model.train_rank_ic, 3)}</td>
-              <td>{model.placebo_rank_ic === null ? "n/a" : formatNumber(model.placebo_rank_ic, 3)}</td>
-              <td>{model.hit_rate === null ? "n/a" : formatPercent(model.hit_rate)}</td>
-              <td>{model.rmse === null ? "n/a" : formatNumber(model.rmse, 4)}</td>
-              <td>{model.fold_count}</td>
-              <td>{model.diagnostic_warnings?.length ? model.diagnostic_warnings.join("; ") : "None"}</td>
-              <td><span className="status-pill">{model.status}</span></td>
+    <div className="panel-grid">
+      <section className="panel wide-panel">
+        <h2>Model Comparison</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Model</th>
+              <th>Engine</th>
+              <th>Rank IC</th>
+              <th>Train IC</th>
+              <th>Placebo IC</th>
+              <th>Hit Rate</th>
+              <th>RMSE</th>
+              <th>Folds</th>
+              <th>Status</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </section>
+          </thead>
+          <tbody>
+            {models.map((model) => (
+              <tr key={model.name}>
+                <td>{model.name}</td>
+                <td>{model.engine}</td>
+                <td className={model.rank_ic === bestRankIc ? "best-cell" : ""}>{model.rank_ic === null ? "n/a" : formatNumber(model.rank_ic, 3)}</td>
+                <td>{model.train_rank_ic === null ? "n/a" : formatNumber(model.train_rank_ic, 3)}</td>
+                <td>{model.placebo_rank_ic === null ? "n/a" : formatNumber(model.placebo_rank_ic, 3)}</td>
+                <td>{model.hit_rate === null ? "n/a" : formatPercent(model.hit_rate)}</td>
+                <td>{model.rmse === null ? "n/a" : formatNumber(model.rmse, 4)}</td>
+                <td>{model.fold_count}</td>
+                <td><span className="status-pill">{model.status}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+      <section className="panel wide-panel">
+        <h2>Model Diagnostics</h2>
+        <div className="diagnostic-list">
+          {diagnostics.length ? diagnostics.map((model) => (
+            <div className="diagnostic-row" key={model.name}>
+              <strong>{model.name}</strong>
+              <div className="chip-row">
+                {model.diagnostic_warnings.map((warning) => (
+                  <span className="warning-chip" key={warning} title={warning}>{warningLabel(warning)}</span>
+                ))}
+              </div>
+            </div>
+          )) : <span className="ok-chip">No model diagnostics triggered</span>}
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -539,39 +666,42 @@ function RiskView({
   const exposureRows = exposureSource.map((row) => ({
     sector: row.sector,
     exposure: Number((row.weight * 100).toFixed(1)),
-  }));
+  })).sort((a, b) => b.exposure - a.exposure);
+  const factorRows = factorExposure
+    .map((row) => ({ factor: row.factor, exposure: Number(row.exposure.toFixed(2)) }))
+    .sort((a, b) => Math.abs(b.exposure) - Math.abs(a.exposure));
+  const maxSectorExposure = Math.max(...exposureRows.map((row) => row.exposure), 1);
+  const maxFactorExposure = Math.max(...factorRows.map((row) => Math.abs(row.exposure)), 1);
 
   return (
     <div className="panel-grid">
       <section className="panel wide-panel">
         <h2>{selectedBacktest ? `${selectedBacktest.name} Sector Exposure` : "Sector Exposure"}</h2>
-        <div className="chart">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={exposureRows} layout="vertical" margin={{ left: 120 }}>
-              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-              <XAxis type="number" />
-              <YAxis dataKey="sector" type="category" width={120} />
-              <Tooltip />
-              <Bar dataKey="exposure" fill="#1f6f8b" />
-            </BarChart>
-          </ResponsiveContainer>
+        <div className="bar-list">
+          {exposureRows.map((row) => (
+            <div className="bar-row" key={row.sector}>
+              <span>{row.sector}</span>
+              <div><i style={{ width: `${(row.exposure / maxSectorExposure) * 100}%` }} /></div>
+              <strong>{row.exposure.toFixed(1)}%</strong>
+            </div>
+          ))}
         </div>
       </section>
       <section className="panel">
         <h2>{selectedBacktest ? "Latest Factor Exposures" : "Factor Exposures"}</h2>
-        <table>
-          <thead>
-            <tr><th>Factor</th><th>Exposure</th></tr>
-          </thead>
-          <tbody>
-            {factorExposure.map((row) => (
-              <tr key={row.factor}>
-                <td>{row.factor}</td>
-                <td>{formatNumber(row.exposure, 2)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="factor-bars">
+          {factorRows.map((row) => {
+            const offset = row.exposure < 0 ? 50 - (Math.abs(row.exposure) / maxFactorExposure) * 50 : 50;
+            const width = (Math.abs(row.exposure) / maxFactorExposure) * 50;
+            return (
+              <div className="factor-row" key={row.factor}>
+                <span>{row.factor}</span>
+                <div><i className={row.exposure < 0 ? "negative-bar" : ""} style={{ left: `${offset}%`, width: `${width}%` }} /></div>
+                <strong>{formatNumber(row.exposure, 2)}</strong>
+              </div>
+            );
+          })}
+        </div>
       </section>
       <section className="panel">
         <h2>{selectedBacktest ? "Selected Strategy Positions" : "Latest Positions"}</h2>
@@ -804,6 +934,7 @@ function App() {
             <span>{persistence.backtest_results.toLocaleString()} backtests</span>
           </div>
         )}
+        <StrategySummary selectedBacktest={selectedBacktest} detail={backtestDetail} />
         <MetricGrid metrics={metrics} />
         {view === "overview" && (
           <OverviewView rankings={rankings} selectedBacktest={selectedBacktest} detail={backtestDetail} />

@@ -13,6 +13,8 @@ class DataQualityReport:
     coverage_ratio: float | None
     start_date: str | None
     end_date: str | None
+    source_period: str | None
+    universe_limit: int | None
     failed_tickers: list[str]
     stale_tickers: list[str]
     sparse_tickers: list[str]
@@ -36,6 +38,8 @@ def validate_price_history(prices: pd.DataFrame, source: str) -> DataQualityRepo
             None,
             None,
             None,
+            attrs.get("period"),
+            attrs.get("universe_limit"),
             attrs.get("failed_tickers", []),
             [],
             [],
@@ -115,6 +119,8 @@ def validate_price_history(prices: pd.DataFrame, source: str) -> DataQualityRepo
         coverage_ratio=coverage_ratio,
         start_date=start.date().isoformat() if pd.notna(start) else None,
         end_date=end.date().isoformat() if pd.notna(end) else None,
+        source_period=attrs.get("period"),
+        universe_limit=attrs.get("universe_limit"),
         failed_tickers=failed_tickers,
         stale_tickers=stale_tickers,
         sparse_tickers=sorted(sparse_ticker_index),
@@ -135,6 +141,8 @@ def report_to_dict(report: DataQualityReport) -> dict:
         "coverage_ratio": report.coverage_ratio,
         "start_date": report.start_date,
         "end_date": report.end_date,
+        "source_period": report.source_period,
+        "universe_limit": report.universe_limit,
         "failed_tickers": report.failed_tickers,
         "stale_tickers": report.stale_tickers,
         "sparse_tickers": report.sparse_tickers,

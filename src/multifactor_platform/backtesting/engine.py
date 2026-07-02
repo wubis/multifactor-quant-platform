@@ -297,5 +297,14 @@ def run_top_n_backtest(
             "slippage_bps": slippage_bps,
             "rebalance_delay_days": rebalance_delay_days,
             "benchmark_ticker": benchmark_ticker,
+            "data_period": prices.attrs.get("period"),
+            "data_universe_limit": prices.attrs.get("universe_limit"),
+            "price_ticker_count": int(prices["ticker"].nunique()) if not prices.empty else 0,
+            "price_start_date": (
+                prices["date"].min().date().isoformat() if not prices.empty else None
+            ),
+            "price_end_date": (
+                prices["date"].max().date().isoformat() if not prices.empty else None
+            ),
         },
     }

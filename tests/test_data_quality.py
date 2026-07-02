@@ -21,6 +21,8 @@ def test_price_quality_report_surfaces_ingestion_metadata():
             "expected_ticker_count": 3,
             "failed_tickers": ["CCC"],
             "cache_hit": True,
+            "period": "10y",
+            "universe_limit": 100,
         }
     )
 
@@ -32,3 +34,5 @@ def test_price_quality_report_surfaces_ingestion_metadata():
     assert report["failed_tickers"] == ["CCC"]
     assert report["zero_volume_count"] == 1
     assert report["cache_hit"] is True
+    assert report["source_period"] == "10y"
+    assert report["universe_limit"] == 100

@@ -8,6 +8,9 @@ class Settings(BaseSettings):
     app_name: str = "Multifactor Stock Ranking Platform"
     database_url: str = Field(default="sqlite:///data/processed/multifactor.db")
     sample_universe_size: int = 20
+    yfinance_period: str = "10y"
+    yfinance_universe_limit: int = 100
+    yfinance_batch_size: int = 25
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="MFP_")
 
