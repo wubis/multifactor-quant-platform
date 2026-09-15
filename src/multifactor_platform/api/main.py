@@ -8,7 +8,9 @@ from multifactor_platform.research import ResearchDataError
 import pandas as pd
 from sqlalchemy.exc import SQLAlchemyError
 
+from multifactor_platform.artifacts import save_run
 from multifactor_platform.backtesting.engine import run_top_n_backtest
+from multifactor_platform.backtesting.comparison import common_evaluation_window
 from multifactor_platform.config import get_settings
 from multifactor_platform.data_quality import report_to_dict, validate_price_history
 from multifactor_platform.db.persistence import database_status, persist_pipeline_snapshot
@@ -169,6 +171,7 @@ def list_backtests(source: DataSource = "sample"):
             "id": strategy["id"],
             "name": strategy["name"],
             "source": source,
+            "artifact": strategy["artifact"],
             "metrics": strategy["result"]["metrics"],
             "settings": strategy["result"]["settings"],
             "periods": len(strategy["result"]["returns"]),
@@ -227,20 +230,18 @@ def _build_backtest_strategies(source: DataSource, prices: pd.DataFrame, feature
                 }
             )
 
-    return [
-        {
-            **config,
-            "result": run_top_n_backtest(
-                config["rankings"],
-                prices,
-                features=features,
-                n=config["n"],
-                construction=config["construction"],
-                rebalance_delay_days=1,
-            ),
-        }
-        for config in strategy_configs
-    ]
+    evaluation_start, evaluation_end = common_evaluation_window(
+        [config["rankings"] for config in strategy_configs], prices,
+    )
+    strategies = []
+    for config in strategy_configs:
+        parameters = dict(n=config['n'], construction=config['construction'], rebalance_delay_days=1,
+                          evaluation_start=evaluation_start.isoformat(), evaluation_end=evaluation_end.isoformat())
+        result = run_top_n_backtest(config['rankings'], prices, features=features, **parameters)
+        artifact = save_run({'prices': prices, 'features': features, 'rankings': config['rankings']},
+                            result, parameters)
+        strategies.append({**config, 'result': result, 'artifact': artifact})
+    return strategies
 
 
 @lru_cache(maxsize=4)
@@ -267,9 +268,13 @@ def get_backtest(backtest_id: str, source: DataSource = "sample"):
         "id": strategy["id"],
         "name": strategy["name"],
         "source": source,
+        "artifact": strategy["artifact"],
         "metrics": result["metrics"],
         "settings": result["settings"],
         "warnings": result["warnings"],
+        "daily_ledger": _json_records(result["daily_ledger"].reset_index()),
+        "daily_holdings": _json_records(result["daily_holdings"]),
+        "trades": _json_records(result["trades"]),
         "returns": [
             {"date": index.date().isoformat(), "return": value}
             for index, value in result["returns"].items()

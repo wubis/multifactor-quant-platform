@@ -58,7 +58,11 @@ type BacktestDetail = Backtest & {
     slippage_bps: number;
     rebalance_delay_days: number;
     benchmark_ticker: string;
+    evaluation_start: string;
+    evaluation_end: string;
+    initial_capital: number;
   };
+  daily_ledger: { date: string; nav: number; benchmark_return: number }[];
   returns: { date: string; return: number }[];
   benchmark_returns: { date: string; return: number }[];
   excess_returns: { date: string; return: number }[];
@@ -173,14 +177,14 @@ function topFactorExposure(detail?: BacktestDetail) {
   ));
 }
 
-function buildEquityCurve(returns: BacktestDetail["returns"] = []) {
-  let equity = 1;
-  return returns.map((row) => {
-    equity *= 1 + row.return;
+function buildDailyEquityCurve(detail?: BacktestDetail) {
+  let benchmarkEquity = 1;
+  return (detail?.daily_ledger || []).map((row) => {
+    benchmarkEquity *= 1 + row.benchmark_return;
     return {
       date: row.date,
-      equity: Number(equity.toFixed(4)),
-      monthlyReturn: Number((row.return * 100).toFixed(2)),
+      strategyEquity: row.nav / (detail?.settings.initial_capital || 1),
+      benchmarkEquity,
     };
   });
 }
@@ -297,7 +301,7 @@ function StrategySummary({
         <strong>{modelSlug(selectedBacktest?.id)}</strong>
       </div>
       <div>
-        <span>Months</span>
+        <span>Holding Periods</span>
         <strong>{selectedBacktest?.periods || 0}</strong>
       </div>
       <div>
@@ -382,7 +386,7 @@ function OverviewView({
           <table>
             <tbody>
               <tr><th>Strategy</th><td>{selectedBacktest?.name || "n/a"}</td></tr>
-              <tr><th>Backtest Months</th><td>{selectedBacktest?.periods || 0}</td></tr>
+              <tr><th>Holding Periods</th><td>{selectedBacktest?.periods || 0}</td></tr>
               <tr><th>Latest Holdings</th><td>{holdings.length}</td></tr>
               <tr><th>Sector Count</th><td>{sectorCount || "n/a"}</td></tr>
               <tr><th>Top Factor Tilt</th><td>{topExposure ? `${topExposure.factor} ${formatNumber(topExposure.exposure, 2)}` : "n/a"}</td></tr>
@@ -399,6 +403,7 @@ function OverviewView({
 
 function BacktestsView({ backtests, detail }: { backtests: Backtest[]; detail?: BacktestDetail }) {
   const chartRows = buildBacktestRows(detail);
+  const dailyRows = buildDailyEquityCurve(detail);
   const turnoverRows = (detail?.turnover || []).map((row) => ({
     date: row.date,
     turnover: Number((row.turnover * 100).toFixed(1)),
@@ -429,9 +434,10 @@ function BacktestsView({ backtests, detail }: { backtests: Backtest[]; detail?: 
       )}
       <section className="panel wide-panel">
         <h2>Strategy Comparison</h2>
+        <p>Shared evaluation: {detail?.settings.evaluation_start || "—"} to {detail?.settings.evaluation_end || "—"}. Risk metrics use daily returns.</p>
         <table>
           <thead>
-            <tr><th>Strategy</th><th>Months</th><th>CAGR</th><th>SPY CAGR</th><th>CAGR Spread</th><th>Sharpe</th><th>Info Ratio</th></tr>
+            <tr><th>Strategy</th><th>Periods</th><th>CAGR</th><th>SPY CAGR</th><th>CAGR Spread</th><th>Sharpe</th><th>Info Ratio</th></tr>
           </thead>
           <tbody>
             {backtests.map((row) => (
@@ -449,10 +455,10 @@ function BacktestsView({ backtests, detail }: { backtests: Backtest[]; detail?: 
         </table>
       </section>
       <section className="panel wide-panel">
-        <h2>{detail?.name || "Selected Strategy"} vs SPY</h2>
+        <h2>{detail?.name || "Selected Strategy"} vs SPY — Daily NAV</h2>
         <div className="chart">
           <ResponsiveContainer width="100%" height="100%">
-            <RechartsLineChart data={chartRows}>
+            <RechartsLineChart data={dailyRows}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
               <XAxis dataKey="date" minTickGap={28} />
               <YAxis domain={["auto", "auto"]} />

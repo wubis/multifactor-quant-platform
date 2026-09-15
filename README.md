@@ -6,7 +6,7 @@ This project is built to behave like a small production research platform. It in
 
 ## Research validity status
 
-The first correctness repair is implemented; see [the research rebuild roadmap](docs/roadmap.md).
+The correctness, daily-accounting, and research-archive milestones are implemented; see [the research rebuild roadmap](docs/roadmap.md).
 Historical yfinance multifactor backtests and model evaluation are now **blocked** because the
 provider adapter supplies current fundamental snapshots, not point-in-time history. Snapshot
 dates are preserved. Rankings can be produced only when those fundamentals were available on
@@ -15,9 +15,32 @@ Use `source=sample` for deterministic pipeline checks, not investment conclusion
 
 Walk-forward training now excludes unrealized labels, drawdown includes initial capital, and
 portfolio costs account for drift and both buys and sells. Existing database results predate
-these fixes and have not been regenerated. Risk metrics still use monthly observations.
+these fixes and have not been regenerated. Risk metrics now use daily observations; CAGR uses actual elapsed calendar time.
 The dashboard's CAGR spread is not risk-adjusted alpha; sector-balanced portfolios are not
 benchmark-sector-neutral. The allocator's beta target is informational and is not enforced.
+
+### Reproducible runs
+
+```bash
+python -m multifactor_platform.jobs.run_backtest --source sample --top-n 10
+# Use the artifact.path returned by the first command:
+python -m multifactor_platform.jobs.run_backtest --replay-run data/processed/research/runs/<run-id>
+```
+
+Each CLI run and API strategy comparison saves an immutable bundle containing input snapshots,
+parameters, source files, numerical dependency versions, daily NAV/holdings/trades, and summary
+results. Replay verifies checksums and requires matching code/dependencies; it compares every
+regenerated output with the archive. This reproduces the supplied rankings/predictions, not ML
+training. `--output-dir` changes the archive root for CLI runs.
+
+The backtest detail API exposes `daily_ledger`, `daily_holdings`, `trades`, and `artifact` alongside
+holding-period diagnostics. Strategy comparisons use an identical executable window and report
+its boundaries in `settings`. The dashboard plots daily NAV.
+
+Positions use adjusted total-return units rather than raw broker shares. Corporate actions remain
+embedded in the adjusted price series. The simulator accrues cash using a configurable constant
+annual rate, rejects missing daily marks, and marks holdings through the terminal date without
+assuming liquidation. These mechanics do not replace point-in-time data or prove an investment edge.
 
 ## What It Does
 

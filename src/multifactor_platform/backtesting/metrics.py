@@ -46,12 +46,28 @@ def summarize_returns(
     returns: pd.Series,
     turnovers: pd.Series | None = None,
     benchmark_returns: pd.Series | None = None,
+    periods_per_year: int = 12,
+    risk_free_returns: pd.Series | None = None,
+    elapsed_years: float | None = None,
 ) -> dict[str, float]:
+    if returns.isna().any() or not np.isfinite(returns).all():
+        raise ValueError("Returns must be finite and complete")
+    cash = risk_free_returns if risk_free_returns is not None else pd.Series(0.0, index=returns.index)
+    if not cash.index.equals(returns.index) or cash.isna().any() or not np.isfinite(cash).all():
+        raise ValueError("Cash returns must have identical, complete observation dates")
+
+    def cagr(values):
+        if elapsed_years is None:
+            return annualized_return(values, periods_per_year)
+        if elapsed_years <= 0:
+            raise ValueError("CAGR requires positive elapsed time")
+        return float((1 + values).prod() ** (1 / elapsed_years) - 1)
+
     ongoing_turnovers = turnovers.iloc[1:] if turnovers is not None and len(turnovers) > 1 else turnovers
     summary = {
-        "cagr": annualized_return(returns),
-        "sharpe": sharpe_ratio(returns),
-        "volatility": annualized_volatility(returns),
+        "cagr": cagr(returns),
+        "sharpe": sharpe_ratio(returns - cash, periods_per_year),
+        "volatility": annualized_volatility(returns, periods_per_year),
         "max_drawdown": max_drawdown(returns),
         "win_rate": float((returns > 0).mean()) if not returns.empty else 0.0,
         "average_turnover": float(turnovers.mean()) if turnovers is not None and not turnovers.empty else 0.0,
@@ -80,17 +96,17 @@ def summarize_returns(
         raise ValueError("Strategy and benchmark must have identical, complete observation dates")
     aligned = pd.concat([returns.rename("strategy"), benchmark_returns.rename("benchmark")], axis=1)
     excess = aligned["strategy"] - aligned["benchmark"]
-    benchmark_cagr = annualized_return(aligned["benchmark"])
-    strategy_cagr = annualized_return(aligned["strategy"])
+    benchmark_cagr = cagr(aligned["benchmark"])
+    strategy_cagr = cagr(aligned["strategy"])
     summary.update(
         {
             "benchmark_cagr": benchmark_cagr,
-            "benchmark_sharpe": sharpe_ratio(aligned["benchmark"]),
-            "excess_cagr": annualized_return(excess),
+            "benchmark_sharpe": sharpe_ratio(aligned["benchmark"] - cash, periods_per_year),
+            "excess_cagr": cagr(excess),
             "alpha": strategy_cagr - benchmark_cagr,  # Legacy API alias, not regression alpha.
             "cagr_spread": strategy_cagr - benchmark_cagr,
-            "tracking_error": tracking_error(excess),
-            "information_ratio": information_ratio(excess),
+            "tracking_error": tracking_error(excess, periods_per_year),
+            "information_ratio": information_ratio(excess, periods_per_year),
         }
     )
     return summary

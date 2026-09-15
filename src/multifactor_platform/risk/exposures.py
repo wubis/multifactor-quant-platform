@@ -2,7 +2,7 @@ import pandas as pd
 
 
 FACTOR_EXPOSURE_COLUMNS = {
-    "beta": "beta_252d_z",
+    "beta": "beta_252d",
     "size": "market_cap_z",
     "value": "value_score",
     "momentum": "momentum_score",
@@ -26,14 +26,20 @@ def compute_factor_exposures(holdings: pd.DataFrame, features: pd.DataFrame) -> 
     feature_frame = features[feature_columns].copy()
     feature_frame["date"] = pd.to_datetime(feature_frame["date"])
 
-    holding_frame = holdings[["date", "ticker", "weight"]].copy()
+    holding_frame = holdings[[column for column in ["date", "ticker", "weight", "signal_date"] if column in holdings]].copy()
     holding_frame["date"] = pd.to_datetime(holding_frame["date"])
 
-    merged = holding_frame.merge(feature_frame, on=["date", "ticker"], how="left")
+    if "signal_date" in holding_frame:
+        feature_frame = feature_frame.rename(columns={"date": "signal_date"})
+        merged = holding_frame.merge(feature_frame, on=["signal_date", "ticker"], how="left")
+    else:
+        merged = holding_frame.merge(feature_frame, on=["date", "ticker"], how="left")
     rows = []
     for date, frame in merged.groupby("date"):
         weights = frame["weight"].fillna(0)
         for factor, column in available_columns.items():
+            if frame.loc[weights > 0, column].isna().any():
+                continue  # Missing exposures are unavailable, not zero risk.
             values = frame[column].fillna(0)
             rows.append(
                 {

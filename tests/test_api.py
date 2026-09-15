@@ -70,6 +70,10 @@ def test_backtest_detail_exposes_benchmark_cost_and_risk_series():
     assert body["costs"]
     assert body["sector_exposure"]
     assert body["factor_exposure"]
+    assert body["daily_ledger"]
+    assert body["daily_holdings"]
+    assert body["trades"]
+    assert body["artifact"]["run_id"]
     assert body["holdings"]
     assert body["rebalance_log"]
     assert "warnings" in body
@@ -91,6 +95,10 @@ def test_backtests_endpoint_lists_strategy_variants():
     assert "sample-random-forest-top-10" in ids
     assert "sample-gradient-boosting-top-10" in ids
     assert all("periods" in row for row in response.json())
+    windows = {(row['settings']['evaluation_start'], row['settings']['evaluation_end'])
+               for row in response.json()}
+    assert len(windows) == 1
+    assert len({row['periods'] for row in response.json()}) == 1
 
 
 def test_models_endpoint_runs_walk_forward_models_offline():

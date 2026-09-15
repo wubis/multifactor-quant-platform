@@ -16,13 +16,30 @@ Implemented:
 
 Existing stored results predate these corrections. They were not rewritten and should not be compared with corrected runs.
 
-## Next: daily accounting and reproducible research
+## Daily accounting and reproducibility milestone
 
-1. Build a daily holdings/cash/trades ledger with corporate actions, end-of-test valuation, and explicit cash-rate accrual. Current metrics still use monthly holding-period observations and miss intramonth drawdown. Cost-adjusted period NAV is reconciled, but a daily execution ledger is not implemented.
-2. Align forecast labels to the execution and holding schedule. Current labels still use the next 21 available ticker observations; handle calendar gaps explicitly before treating these as a tradable target.
-3. Use common evaluation dates for strategy comparisons; retain an untouched final evaluation period and account for overlapping outcomes in uncertainty estimates.
-4. Persist run manifests containing code/configuration versions, input hashes, model artifacts, predictions, holdings, and trades.
-5. Refresh/version caches explicitly, and make Parquet support an installed dependency. Fix historical risk-exposure joins and distinguish standardized characteristics from actual portfolio beta.
+Implemented:
+
+- Daily close-to-close NAV, holdings, signed trades, buy/sell costs, and cash interest. Every date reconciles opening NAV plus market P&L and interest less costs to closing NAV. Turnover consistently means half gross traded notional / pre-trade NAV, including the initial entry.
+- Daily volatility, Sharpe, tracking error, information ratio, and drawdown; CAGR uses actual calendar time. Entry costs are included as the first daily observation with a zero benchmark return at entry. Cash accrual uses actual calendar days and a configured constant annual rate (default zero).
+- Mark remaining positions through the requested final date. No new terminal-date position or forced liquidation is assumed.
+- Monthly holding-period summaries remain available for turnover/return diagnostics; the equity chart uses daily NAV. A final holding period may be partial.
+- Comparisons are rerun from cash on identical executable boundaries. Missing internal prediction periods reject the comparison. Incomplete/stale month-end predictions do not manufacture rebalance signals. The comparison ends at the last common rebalance boundary, while a standalone run can value its final holdings through the end of its price data.
+- Date-aware factor-exposure joins use signal dates; beta is actual rolling beta, rather than its cross-sectional z-score. Missing exposure values are omitted rather than reported as zero.
+- Content-addressed CSV input snapshots with schemas, availability restrictions, and round-trip float precision. CSV avoids an optional Parquet dependency for research archives.
+- Both API strategy comparisons and CLI backtests write immutable run bundles under `data/processed/research`. Bundles contain input identifiers, exact parameters, source copies, numerical dependency versions, daily ledgers, trades, holdings, supplied predictions/rankings, and summaries.
+- Replay verifies artifact checksums, matching source/dependencies, and exact equality of every regenerated output file and summary. It replays frozen predictions; it does not refit historical ML estimators.
+
+Accounting scope: holdings use **adjusted total-return units**, not raw executable shares. Corporate actions are embedded in adjusted prices; there is no independent event ledger for dividends, splits, mergers, or delistings. Cash rates are configurable constants, not a historical rate feed. Daily observations use the supplied price calendar; complete vendor-wide missing sessions still require an independent exchange-calendar audit.
+
+## Next research work
+
+1. Obtain point-in-time fundamentals and historically eligible securities with corporate-action/delisting records. Keep historical yfinance multifactor research disabled until appropriate inputs exist.
+2. Align forecast labels to actual execution and holding dates; current labels still use the next 21 available ticker observations. Address calendar gaps explicitly.
+3. Reserve an untouched final evaluation period; account for overlapping outcomes in uncertainty estimates. Shared backtest windows do not fix research selection bias.
+4. Archive fitted model artifacts and full training manifests to support retraining reproducibility, beyond frozen-prediction replay.
+5. Add raw-share corporate-action accounting and a historical cash-rate feed; audit vendor calendars and execution assumptions.
+6. Add explicit cache refresh/freshness rules. The new immutable research snapshots preserve exactly what was used but do not make the upstream yfinance cache fresh.
 
 ## Data and investment mandate
 
