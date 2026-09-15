@@ -4,6 +4,21 @@ An end-to-end platform for ranking U.S. large-cap stocks using financial factors
 
 This project is built to behave like a small production research platform. It includes data ingestion, feature engineering, factor scoring, backtesting, persistence, command-line jobs, data-quality reporting, a FastAPI backend, and a React dashboard.
 
+## Research validity status
+
+The first correctness repair is implemented; see [the research rebuild roadmap](docs/roadmap.md).
+Historical yfinance multifactor backtests and model evaluation are now **blocked** because the
+provider adapter supplies current fundamental snapshots, not point-in-time history. Snapshot
+dates are preserved. Rankings can be produced only when those fundamentals were available on
+the corresponding price date; otherwise the API explains that no eligible rankings exist.
+Use `source=sample` for deterministic pipeline checks, not investment conclusions.
+
+Walk-forward training now excludes unrealized labels, drawdown includes initial capital, and
+portfolio costs account for drift and both buys and sells. Existing database results predate
+these fixes and have not been regenerated. Risk metrics still use monthly observations.
+The dashboard's CAGR spread is not risk-adjusted alpha; sector-balanced portfolios are not
+benchmark-sector-neutral. The allocator's beta target is informational and is not enforced.
+
 ## What It Does
 
 The platform answers a practical investment research question:
@@ -50,7 +65,7 @@ The default live demo uses `yfinance`. The deterministic `sample` source is kept
 - Cross-sectional normalization by date
 - Weighted multifactor ranking model
 - ML ranking models with walk-forward validation
-- Monthly top-N and sector-neutral backtests with delayed rebalancing
+- Monthly top-N and sector-balanced backtests with delayed rebalancing
 - Explicit commission and slippage cost modeling
 - Metrics including CAGR, Sharpe, volatility, max drawdown, win rate, turnover, alpha, tracking error, and information ratio
 - Constrained portfolio optimizer with max position, sector exposure, turnover, and cash controls
@@ -119,7 +134,7 @@ Implemented models:
 - **Random Forest**: a tree ensemble that can capture nonlinear relationships between factors
 - **Gradient Boosting**: uses XGBoost if installed, LightGBM if installed, and otherwise falls back to scikit-learn histogram gradient boosting
 
-Validation uses a walk-forward setup. The model trains on earlier dates, validates on a later window, then rolls forward and repeats. This better matches how a trading model would be used in production because future data is never included in training.
+Validation uses a walk-forward setup. The model trains on earlier dates, validates on a later window, then rolls forward and repeats. This better matches how a trading model would be used in production with training labels admitted only after their realization dates.
 
 Model diagnostics include:
 
@@ -139,15 +154,16 @@ The baseline strategy:
 4. Trade on the next available market date.
 5. Equal-weight the portfolio.
 6. Hold until the next rebalance trade date.
-7. Deduct commission and slippage costs based on turnover.
+7. Fund commission and slippage from actual buys and sells before earning holding-period returns.
+8. Carry drifted weights into the next rebalance.
 
 Tracked metrics:
 
 - CAGR: annualized growth rate
 - Benchmark CAGR: SPY annualized growth over the same holding windows
-- Alpha: strategy CAGR minus SPY CAGR
-- Sharpe ratio: return per unit of volatility
-- Information ratio: excess return per unit of benchmark-relative volatility
+- CAGR spread: strategy CAGR minus SPY CAGR (legacy API key `alpha`)
+- Sharpe ratio: annualized arithmetic excess return per unit of volatility; cash rate defaults to zero
+- Information ratio: annualized arithmetic active return per unit of tracking error
 - Tracking error: volatility of strategy returns minus benchmark returns
 - Max drawdown: worst peak-to-trough loss
 - Volatility: variability of returns
@@ -156,7 +172,7 @@ Tracked metrics:
 
 The backtest detail API also returns date-level strategy returns, SPY returns, excess returns, turnover, cost breakdowns, sector exposure, and the rebalance log showing signal date, trade date, and next trade date.
 
-Implemented strategy variants include the original weighted-score top-10 portfolio, a sector-neutral weighted-score portfolio, and out-of-sample Linear Regression, Elastic Net, Random Forest, and Gradient Boosting portfolios built from walk-forward model predictions.
+Implemented strategy variants include the original weighted-score top-10 portfolio, a sector-balanced weighted-score portfolio, and out-of-sample Linear Regression, Elastic Net, Random Forest, and Gradient Boosting portfolios built from walk-forward model predictions.
 
 The yfinance path uses 10 years of price history by default over a curated 100-stock U.S. large-cap universe, plus SPY as the benchmark. These defaults can be changed with `MFP_YFINANCE_PERIOD`, `MFP_YFINANCE_UNIVERSE_LIMIT`, and `MFP_YFINANCE_BATCH_SIZE`. Downloads are batched so partial vendor failures can be reported ticker-by-ticker. Price and fundamental snapshots are cached under `data/external/yfinance/` as Parquet files when the local pandas environment supports Parquet; if not, the pipeline still runs without cache persistence. Backtest responses include warnings when the validation period is short, when holdings do not change after the initial rebalance, or when a strategy selects most of the available universe. The detail response also includes rebalance-level holdings, the configured data period, and the observed ticker count so results can be inspected instead of treated as a black box.
 
@@ -177,7 +193,7 @@ The project includes `GET /data-quality/report?source=...` and a matching ingest
 - short ticker histories
 - whether the source should be treated as demo-grade
 
-Important caveat: `yfinance` is useful for a live end-to-end demo, but it is not a research-grade point-in-time dataset. Current yfinance fundamentals are applied as a snapshot, so historical backtest results should be treated as platform demonstrations, not investment claims.
+Important caveat: `yfinance` is useful for a live end-to-end demo, but it is not a research-grade point-in-time dataset. Current yfinance fundamentals remain snapshots with their original dates; historical multifactor backtests and model evaluation using this source are disabled.
 
 To make this research-grade, the next data upgrades would be:
 

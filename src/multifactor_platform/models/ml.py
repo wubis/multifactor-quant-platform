@@ -11,6 +11,8 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
+from multifactor_platform.research import require_historical_research
+
 
 MODEL_FEATURE_COLUMNS = [
     "momentum_1m_z",
@@ -31,6 +33,7 @@ MODEL_FEATURE_COLUMNS = [
     "dollar_volume_z",
 ]
 TARGET_COLUMN = "next_21d_relative_return"
+LABEL_END_COLUMN = "label_end_date"
 
 
 @dataclass(frozen=True)
@@ -45,10 +48,16 @@ def add_forward_return_target(
     horizon_days: int = 21,
     target_column: str = TARGET_COLUMN,
 ) -> pd.DataFrame:
+    if horizon_days < 1:
+        raise ValueError("horizon_days must be positive")
     output = features.sort_values(["ticker", "date"]).copy()
-    output["next_21d_return"] = output.groupby("ticker")["adj_close"].pct_change(horizon_days).shift(
-        -horizon_days
+    grouped = output.groupby("ticker")
+    output["next_21d_return"] = (
+        grouped["adj_close"].shift(-horizon_days) / output["adj_close"] - 1
     )
+    output[LABEL_END_COLUMN] = grouped["date"].shift(-horizon_days)
+    # The relative target is available only when all constituent returns are known.
+    output[LABEL_END_COLUMN] = output.groupby("date")[LABEL_END_COLUMN].transform("max")
     output[target_column] = output["next_21d_return"] - output.groupby("date")[
         "next_21d_return"
     ].transform("mean")
@@ -56,9 +65,10 @@ def add_forward_return_target(
 
 
 def prepare_model_frame(features: pd.DataFrame) -> pd.DataFrame:
+    require_historical_research(features)
     available_features = [column for column in MODEL_FEATURE_COLUMNS if column in features.columns]
     model_frame = add_forward_return_target(features)
-    required = ["date", "ticker", TARGET_COLUMN, *available_features]
+    required = ["date", "ticker", LABEL_END_COLUMN, TARGET_COLUMN, *available_features]
     model_frame = model_frame.dropna(subset=required).copy()
     return model_frame[required]
 
@@ -250,12 +260,10 @@ def placebo_predictions(predictions: pd.DataFrame, random_state: int = 7) -> pd.
 
     rng = np.random.default_rng(random_state)
     output = predictions.copy()
-    shuffled = []
     for _, frame in output.groupby("date", sort=False):
         values = frame["prediction"].to_numpy().copy()
         rng.shuffle(values)
-        shuffled.extend(values)
-    output["prediction"] = shuffled
+        output.loc[frame.index, "prediction"] = values
     return output
 
 
@@ -267,13 +275,18 @@ def walk_forward_validate_model(
     feature_columns = feature_columns or [
         column for column in MODEL_FEATURE_COLUMNS if column in model_frame.columns
     ]
+    if LABEL_END_COLUMN not in model_frame:
+        raise ValueError("Walk-forward validation requires label_end_date")
     splits = build_walk_forward_splits(model_frame)
     predictions = []
     train_predictions = []
     fold_rows = []
 
     for fold_number, (train_end, validation_start, validation_end) in enumerate(splits, start=1):
-        train = model_frame.loc[model_frame["date"] <= train_end]
+        train = model_frame.loc[
+            (model_frame["date"] <= train_end)
+            & (model_frame[LABEL_END_COLUMN] < validation_start)
+        ]
         validation = model_frame.loc[
             (model_frame["date"] >= validation_start) & (model_frame["date"] <= validation_end)
         ]
@@ -296,7 +309,8 @@ def walk_forward_validate_model(
         fold_rows.append(
             {
                 "fold": fold_number,
-                "train_end": train_end,
+                "train_end": train["date"].max(),
+                "train_label_end": train[LABEL_END_COLUMN].max(),
                 "validation_start": validation_start,
                 "validation_end": validation_end,
                 "train_rows": len(train),

@@ -27,6 +27,16 @@ def optimize_ranked_portfolio(
     previous_weights: pd.Series | None = None,
 ) -> dict:
     constraints = constraints or PortfolioConstraints()
+    if any(not 0 <= value <= 1 for value in [
+        constraints.max_position_size, constraints.min_position_size,
+        constraints.max_sector_exposure, constraints.max_turnover, constraints.cash_minimum,
+    ]) or constraints.min_position_size > constraints.max_position_size:
+        raise ValueError("Invalid portfolio constraints")
+    if previous_weights is not None and (
+        previous_weights.isna().any() or (previous_weights < 0).any()
+        or previous_weights.sum() > 1 + 1e-10 or previous_weights.index.has_duplicates
+    ):
+        raise ValueError("Previous weights must describe a valid long-only portfolio")
     candidates = ranked.sort_values(["rank", "composite_score"], ascending=[True, False]).head(
         candidate_limit
     )
@@ -70,10 +80,32 @@ def optimize_ranked_portfolio(
         turnover = float((aligned["current"] - aligned["previous"]).abs().sum() / 2)
 
     if previous_weights is not None and turnover > constraints.max_turnover:
-        scale = constraints.max_turnover / turnover if turnover else 1.0
-        positions["weight"] = positions["weight"] * scale
+        scale = constraints.max_turnover / turnover
+        # Move along the trade vector; scaling only new holdings liquidates old ones.
+        weights = aligned["previous"] + scale * (aligned["current"] - aligned["previous"])
+        weights = weights.loc[weights > 1e-12]
+        metadata = ranked.drop_duplicates("ticker").set_index("ticker")
+        missing = weights.index.difference(metadata.index)
+        if len(missing):
+            raise ValueError(f"Metadata required for retained holdings: {missing.tolist()}")
+        positions = metadata.loc[weights.index, ["sector", "rank", "composite_score"]].copy()
+        positions["weight"] = weights
+        positions = positions.rename_axis("ticker").reset_index()
         current_weights = positions.set_index("ticker")["weight"]
-        turnover = constraints.max_turnover
+        actual = pd.concat([current_weights, previous_weights], axis=1).fillna(0)
+        turnover = float((actual.iloc[:, 0] - actual.iloc[:, 1]).abs().sum() / 2)
+
+    # A turnover-limited transition may retain positions that violate new limits.
+    # Reject that transition rather than report constraints that were not achieved.
+    if not positions.empty:
+        positions["sector"] = positions["sector"].fillna("Unknown")
+        if (
+            (positions["weight"] > constraints.max_position_size + 1e-10).any()
+            or (positions["weight"] < constraints.min_position_size - 1e-10).any()
+            or (positions.groupby("sector")["weight"].sum() > constraints.max_sector_exposure + 1e-10).any()
+            or positions["weight"].sum() > target_invested + 1e-10
+        ):
+            raise ValueError("Turnover-limited transition violates portfolio constraints")
 
     invested_weight = float(positions["weight"].sum()) if not positions.empty else 0.0
     cash_weight = max(1 - invested_weight, 0.0)
@@ -85,6 +117,7 @@ def optimize_ranked_portfolio(
 
     return {
         "positions": positions,
+        "warnings": ["Beta target is informational; this allocator does not enforce beta."],
         "sector_exposure": sector_exposure,
         "cash_weight": cash_weight,
         "invested_weight": invested_weight,

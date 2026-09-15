@@ -138,7 +138,7 @@ function formatNumber(value: number | undefined, digits = 2) {
 
 function metricTone(label: string, value?: number) {
   if (value === undefined || Number.isNaN(value)) return "neutral";
-  if (["Alpha", "CAGR", "Sharpe", "Info Ratio"].includes(label)) {
+  if (["CAGR Spread", "CAGR", "Sharpe", "Info Ratio"].includes(label)) {
     return value > 0 ? "positive" : value < 0 ? "negative" : "neutral";
   }
   if (label === "Max Drawdown") return value < -0.15 ? "negative" : value < -0.08 ? "caution" : "positive";
@@ -252,7 +252,7 @@ function MetricGrid({ metrics }: { metrics?: Metrics }) {
   const items = [
     { label: "CAGR", value: metrics?.cagr, display: formatPercent(metrics?.cagr) },
     { label: "SPY CAGR", value: metrics?.benchmark_cagr, display: formatPercent(metrics?.benchmark_cagr) },
-    { label: "Alpha", value: metrics?.alpha, display: formatPercent(metrics?.alpha) },
+    { label: "CAGR Spread", value: metrics?.alpha, display: formatPercent(metrics?.alpha) },
     { label: "Sharpe", value: metrics?.sharpe, display: formatNumber(metrics?.sharpe) },
     { label: "Info Ratio", value: metrics?.information_ratio, display: formatNumber(metrics?.information_ratio) },
     { label: "Max Drawdown", value: metrics?.max_drawdown, display: formatPercent(metrics?.max_drawdown) },
@@ -431,7 +431,7 @@ function BacktestsView({ backtests, detail }: { backtests: Backtest[]; detail?: 
         <h2>Strategy Comparison</h2>
         <table>
           <thead>
-            <tr><th>Strategy</th><th>Months</th><th>CAGR</th><th>SPY CAGR</th><th>Alpha</th><th>Sharpe</th><th>Info Ratio</th></tr>
+            <tr><th>Strategy</th><th>Months</th><th>CAGR</th><th>SPY CAGR</th><th>CAGR Spread</th><th>Sharpe</th><th>Info Ratio</th></tr>
           </thead>
           <tbody>
             {backtests.map((row) => (
@@ -440,7 +440,7 @@ function BacktestsView({ backtests, detail }: { backtests: Backtest[]; detail?: 
                 <td>{row.periods}</td>
                 <td className={row.metrics.cagr === bestCagr ? "best-cell" : ""}>{formatPercent(row.metrics.cagr)}</td>
                 <td>{formatPercent(row.metrics.benchmark_cagr)}</td>
-                <td className={metricTone("Alpha", row.metrics.alpha)}>{formatPercent(row.metrics.alpha)}</td>
+                <td className={metricTone("CAGR Spread", row.metrics.alpha)}>{formatPercent(row.metrics.alpha)}</td>
                 <td>{formatNumber(row.metrics.sharpe)}</td>
                 <td className={row.metrics.information_ratio === bestInfoRatio ? "best-cell" : ""}>{formatNumber(row.metrics.information_ratio)}</td>
               </tr>

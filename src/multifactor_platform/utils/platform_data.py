@@ -42,10 +42,8 @@ def _fill_missing_fundamentals(fundamentals: pd.DataFrame) -> pd.DataFrame:
     for column in FUNDAMENTAL_COLUMNS:
         if column not in output.columns:
             output[column] = pd.NA
-        median = output[column].median(skipna=True)
-        if pd.isna(median):
-            median = 0.0
-        output[column] = output[column].fillna(median)
+        medians = output.groupby("date")[column].transform("median")
+        output[column] = output[column].fillna(medians)
     return output
 
 
@@ -86,8 +84,14 @@ def load_yfinance_platform_data(
         batch_size=selected_batch_size,
     )
     fundamentals = fetch_yfinance_fundamentals(universe=universe)
-    fundamentals["date"] = prices["date"].min()
-    return _finalize_pipeline(prices, fundamentals)
+    result = _finalize_pipeline(prices, fundamentals)
+    for frame in result:
+        frame.attrs["historical_research_blocked"] = (
+            "Historical yfinance multifactor research is unavailable: fundamentals are "
+            "current snapshots, not point-in-time history. Supply historical fundamentals "
+            "with availability dates; use sample data for offline pipeline testing."
+        )
+    return result
 
 
 def load_platform_data(source: DataSource = "sample"):

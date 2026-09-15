@@ -1,4 +1,7 @@
+import numpy as np
 import pandas as pd
+
+from multifactor_platform.research import ResearchDataError, require_historical_research
 
 from multifactor_platform.backtesting.costs import estimate_trading_costs
 from multifactor_platform.backtesting.metrics import summarize_returns
@@ -25,7 +28,7 @@ def build_forward_returns(prices: pd.DataFrame) -> pd.DataFrame:
         .rename("month_end_price")
         .reset_index()
     )
-    month_end["forward_1m_return"] = month_end.groupby("ticker")["month_end_price"].pct_change().shift(-1)
+    month_end["forward_1m_return"] = month_end.groupby("ticker")["month_end_price"].shift(-1) / month_end["month_end_price"] - 1
     return month_end
 
 
@@ -69,39 +72,29 @@ def _build_trade_schedule(
     return schedule
 
 
-def _period_return(
-    prices: pd.DataFrame,
-    tickers: pd.Series,
-    weights: pd.Series,
-    start_date: pd.Timestamp,
-    end_date: pd.Timestamp,
-) -> float:
+def _asset_returns(prices, tickers, start_date, end_date):
     period_prices = prices.loc[
         prices["ticker"].isin(tickers) & prices["date"].isin([start_date, end_date]),
         ["date", "ticker", "adj_close"],
     ]
     pivot = period_prices.pivot(index="ticker", columns="date", values="adj_close")
-    if start_date not in pivot.columns or end_date not in pivot.columns:
-        return 0.0
+    pivot = pivot.reindex(index=list(tickers), columns=[start_date, end_date])
+    invalid = pivot.isna() | ~np.isfinite(pivot) | (pivot <= 0)
+    if invalid.any().any():
+        bad = pivot.index[invalid.any(axis=1)].tolist()
+        raise ResearchDataError(
+            f"Missing or invalid execution prices for {bad} between {start_date} and {end_date}"
+        )
+    return pivot[end_date] / pivot[start_date] - 1
 
-    returns = (pivot[end_date] / pivot[start_date] - 1).replace([pd.NA, pd.NaT], 0).fillna(0)
-    aligned = pd.concat([weights.rename("weight"), returns.rename("return")], axis=1).fillna(0)
-    return float((aligned["weight"] * aligned["return"]).sum())
+
+def _period_return(prices, tickers, weights, start_date, end_date) -> float:
+    returns = _asset_returns(prices, tickers, start_date, end_date)
+    return float((weights * returns).sum())
 
 
-def _benchmark_return(
-    prices: pd.DataFrame,
-    start_date: pd.Timestamp,
-    end_date: pd.Timestamp,
-    benchmark_ticker: str,
-) -> float:
-    benchmark_prices = prices.loc[
-        (prices["ticker"] == benchmark_ticker) & prices["date"].isin([start_date, end_date]),
-        ["date", "adj_close"],
-    ].set_index("date")["adj_close"]
-    if start_date not in benchmark_prices.index or end_date not in benchmark_prices.index:
-        return 0.0
-    return float(benchmark_prices.loc[end_date] / benchmark_prices.loc[start_date] - 1)
+def _benchmark_return(prices, start_date, end_date, benchmark_ticker) -> float:
+    return float(_asset_returns(prices, [benchmark_ticker], start_date, end_date).iloc[0])
 
 
 def _sector_exposure(portfolio: pd.DataFrame, rebalance_date: pd.Timestamp) -> pd.DataFrame:
@@ -169,9 +162,18 @@ def run_top_n_backtest(
     rebalance_delay_days: int = 1,
     benchmark_ticker: str = "SPY",
 ) -> dict:
+    require_historical_research(ranked)
+    require_historical_research(prices)
+    if rebalance_delay_days < 1:
+        raise ValueError("Close-based signals require a rebalance delay of at least one day")
+    if n < 1 or construction not in {"top_n", "sector_neutral"}:
+        raise ValueError("Invalid portfolio size or construction")
     if cost_bps is not None:
         commission_bps = cost_bps
         slippage_bps = 0.0
+
+    if commission_bps < 0 or slippage_bps < 0:
+        raise ValueError("Trading costs must be nonnegative")
 
     ranked = ranked.copy()
     prices = prices.copy()
@@ -206,16 +208,29 @@ def run_top_n_backtest(
         prior_weights = previous_weights
         turnover = calculate_turnover(current_weights, prior_weights)
 
-        gross_return = _period_return(
-            prices,
-            portfolio["ticker"],
-            current_weights,
-            trade_date,
-            next_trade_date,
-        )
+        asset_returns = _asset_returns(prices, current_weights.index, trade_date, next_trade_date)
+        gross_return = float((current_weights * asset_returns).sum())
         benchmark_return = _benchmark_return(prices, trade_date, next_trade_date, benchmark_ticker)
-        trading_cost = turnover * ((commission_bps + slippage_bps) / 10_000)
-        net_return = gross_return - trading_cost
+        # Costs are per dollar bought OR sold. Solve for post-cost investable NAV,
+        # since target weights apply to that NAV and trading itself consumes cash.
+        rate = (commission_bps + slippage_bps) / 10_000
+        if rate >= 1:
+            raise ValueError("Trading costs must be less than 100% of traded notional")
+        prior = prior_weights if prior_weights is not None else pd.Series(dtype=float)
+        aligned = pd.concat([current_weights, prior], axis=1).fillna(0)
+        aligned.columns = ["target", "prior"]
+        low, high = 0.0, 1.0
+        for _ in range(60):
+            invested = (low + high) / 2
+            traded_notional = float((invested * aligned.target - aligned.prior).abs().sum())
+            if invested + rate * traded_notional > 1:
+                high = invested
+            else:
+                low = invested
+        invested = (low + high) / 2
+        traded_notional = float((invested * aligned.target - aligned.prior).abs().sum())
+        trading_cost = rate * traded_notional
+        net_return = invested * (1 + gross_return) - 1
 
         portfolio_returns.append((rebalance_date, net_return))
         benchmark_returns.append((rebalance_date, benchmark_return))
@@ -224,8 +239,8 @@ def run_top_n_backtest(
             (
                 rebalance_date,
                 turnover,
-                turnover * (commission_bps / 10_000),
-                turnover * (slippage_bps / 10_000),
+                traded_notional * (commission_bps / 10_000),
+                traded_notional * (slippage_bps / 10_000),
                 trading_cost,
             )
         )
@@ -251,7 +266,7 @@ def run_top_n_backtest(
                 ),
             }
         )
-        previous_weights = current_weights
+        previous_weights = current_weights * (1 + asset_returns) / (1 + gross_return)
 
     returns = pd.Series(dict(portfolio_returns), dtype=float).sort_index()
     benchmark = pd.Series(dict(benchmark_returns), dtype=float).sort_index()
@@ -297,6 +312,10 @@ def run_top_n_backtest(
             "slippage_bps": slippage_bps,
             "rebalance_delay_days": rebalance_delay_days,
             "benchmark_ticker": benchmark_ticker,
+            "cost_convention": "per dollar bought or sold, paid before holding-period returns",
+            "risk_free_return_per_period": 0.0,
+            "risk_sampling": "monthly; intramonth drawdowns are not measured",
+            "alpha_definition": "legacy alias of cagr_spread; not risk-adjusted alpha",
             "data_period": prices.attrs.get("period"),
             "data_universe_limit": prices.attrs.get("universe_limit"),
             "price_ticker_count": int(prices["ticker"].nunique()) if not prices.empty else 0,

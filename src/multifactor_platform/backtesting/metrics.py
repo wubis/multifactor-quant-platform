@@ -11,31 +11,35 @@ def annualized_return(returns: pd.Series, periods_per_year: int = 12) -> float:
 
 
 def annualized_volatility(returns: pd.Series, periods_per_year: int = 12) -> float:
-    return float(returns.std(ddof=0) * np.sqrt(periods_per_year))
+    return float(returns.std(ddof=0) * np.sqrt(periods_per_year)) if not returns.empty else 0.0
 
 
-def sharpe_ratio(returns: pd.Series, periods_per_year: int = 12) -> float:
-    vol = annualized_volatility(returns, periods_per_year)
+def sharpe_ratio(
+    returns: pd.Series, periods_per_year: int = 12, risk_free_return: float = 0.0,
+) -> float:
+    """Arithmetic excess-return Sharpe; risk_free_return is per observation."""
+    excess = returns - risk_free_return
+    vol = annualized_volatility(excess, periods_per_year)
     if vol == 0:
         return 0.0
-    return float(annualized_return(returns, periods_per_year) / vol)
+    return float(excess.mean() * periods_per_year / vol)
 
 
 def max_drawdown(returns: pd.Series) -> float:
     equity = (1 + returns).cumprod()
-    drawdown = equity / equity.cummax() - 1
+    drawdown = equity / equity.cummax().clip(lower=1.0) - 1
     return float(drawdown.min()) if not drawdown.empty else 0.0
 
 
 def tracking_error(excess_returns: pd.Series, periods_per_year: int = 12) -> float:
-    return float(excess_returns.std(ddof=0) * np.sqrt(periods_per_year))
+    return annualized_volatility(excess_returns, periods_per_year)
 
 
 def information_ratio(excess_returns: pd.Series, periods_per_year: int = 12) -> float:
     error = tracking_error(excess_returns, periods_per_year)
     if error == 0:
         return 0.0
-    return float(annualized_return(excess_returns, periods_per_year) / error)
+    return float(excess_returns.mean() * periods_per_year / error)
 
 
 def summarize_returns(
@@ -65,13 +69,16 @@ def summarize_returns(
                 "benchmark_sharpe": 0.0,
                 "excess_cagr": 0.0,
                 "alpha": 0.0,
+                "cagr_spread": 0.0,
                 "tracking_error": 0.0,
                 "information_ratio": 0.0,
             }
         )
         return summary
 
-    aligned = pd.concat([returns.rename("strategy"), benchmark_returns.rename("benchmark")], axis=1).fillna(0)
+    if not returns.index.equals(benchmark_returns.index) or benchmark_returns.isna().any():
+        raise ValueError("Strategy and benchmark must have identical, complete observation dates")
+    aligned = pd.concat([returns.rename("strategy"), benchmark_returns.rename("benchmark")], axis=1)
     excess = aligned["strategy"] - aligned["benchmark"]
     benchmark_cagr = annualized_return(aligned["benchmark"])
     strategy_cagr = annualized_return(aligned["strategy"])
@@ -80,7 +87,8 @@ def summarize_returns(
             "benchmark_cagr": benchmark_cagr,
             "benchmark_sharpe": sharpe_ratio(aligned["benchmark"]),
             "excess_cagr": annualized_return(excess),
-            "alpha": strategy_cagr - benchmark_cagr,
+            "alpha": strategy_cagr - benchmark_cagr,  # Legacy API alias, not regression alpha.
+            "cagr_spread": strategy_cagr - benchmark_cagr,
             "tracking_error": tracking_error(excess),
             "information_ratio": information_ratio(excess),
         }

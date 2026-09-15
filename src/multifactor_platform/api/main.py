@@ -3,6 +3,8 @@ from functools import lru_cache
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from multifactor_platform.research import ResearchDataError
 import pandas as pd
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -26,11 +28,25 @@ app.add_middleware(
 )
 
 
+@app.exception_handler(ResearchDataError)
+async def research_data_error_handler(request, exc):
+    return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+
 def _load_data_or_503(source: DataSource):
     try:
         return load_platform_data(source)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+def _latest_ranking_date(rankings):
+    if rankings.empty:
+        raise ResearchDataError(
+            "No eligible rankings: no price dates have sufficient fundamentals available. "
+            "Current snapshots cannot be applied to earlier price dates."
+        )
+    return rankings["date"].max()
 
 
 def _json_records(frame: pd.DataFrame, columns: list[str] | None = None) -> list[dict]:
@@ -86,7 +102,7 @@ def data_quality_report(source: DataSource = "sample"):
 @app.get("/rankings/latest")
 def latest_rankings(limit: int = 50, source: DataSource = "sample"):
     _, _, rankings = _load_data_or_503(source)
-    latest_date = rankings["date"].max()
+    latest_date = _latest_ranking_date(rankings)
     rows = rankings.loc[rankings["date"] == latest_date].head(limit)
     return {
         "source": source,
@@ -175,7 +191,7 @@ def _build_backtest_strategies(source: DataSource, prices: pd.DataFrame, feature
         {
             "id": f"{source}-sector-neutral-top-12",
             "aliases": {f"{source}-sector-neutral-top-20"},
-            "name": "Weighted Score Sector-Neutral Top 12",
+            "name": "Weighted Score Sector-Balanced Top 12",
             "rankings": rankings,
             "n": 12,
             "construction": "sector_neutral",
@@ -204,7 +220,7 @@ def _build_backtest_strategies(source: DataSource, prices: pd.DataFrame, feature
                 {
                     "id": f"{source}-{slug}-sector-neutral-top-12",
                     "aliases": {f"{source}-{slug}-sector-neutral-top-20"},
-                    "name": f"{model_name} Sector-Neutral Top 12",
+                    "name": f"{model_name} Sector-Balanced Top 12",
                     "rankings": model_rankings,
                     "n": 12,
                     "construction": "sector_neutral",
@@ -325,7 +341,7 @@ def get_backtest(backtest_id: str, source: DataSource = "sample"):
 @app.get("/portfolio/latest")
 def latest_portfolio(limit: int = 10, source: DataSource = "sample"):
     _, _, rankings = _load_data_or_503(source)
-    latest_date = rankings["date"].max()
+    latest_date = _latest_ranking_date(rankings)
     rows = rankings.loc[rankings["date"] == latest_date].head(limit).copy()
     rows["weight"] = 1 / len(rows)
     sector_exposure = (
@@ -348,7 +364,7 @@ def optimized_portfolio(
     cash_minimum: float = 0.02,
 ):
     _, _, rankings = _load_data_or_503(source)
-    latest_date = rankings["date"].max()
+    latest_date = _latest_ranking_date(rankings)
     latest = rankings.loc[rankings["date"] == latest_date].copy()
     result = optimize_ranked_portfolio(
         latest,
@@ -368,6 +384,7 @@ def optimized_portfolio(
         "invested_weight": result["invested_weight"],
         "turnover": result["turnover"],
         "constraints": result["constraints"],
+        "warnings": result["warnings"],
     }
 
 
