@@ -42,6 +42,18 @@ embedded in the adjusted price series. The simulator accrues cash using a config
 annual rate, rejects missing daily marks, and marks holdings through the terminal date without
 assuming liquidation. These mechanics do not replace point-in-time data or prove an investment edge.
 
+### Point-in-time imports and free data direction
+
+The project targets a **$0 SimFin + Tiingo stack**. The validated import source
+`point_in_time` accepts historical financial states and universe events, computes
+valuation using historical daily market cap, and normalizes only eligible stocks.
+Publication/revision timestamps and immutable input identities are retained.
+
+See [the import contract and free-tier limits](docs/data-contract.md) for CSV schemas,
+a runnable fictitious example, provider limitations, and the remaining adapter work.
+The SimFin/Tiingo boundary helpers operate on local records; live downloads and a
+complete statement-to-TTM conversion are not yet connected.
+
 ## What It Does
 
 The platform answers a practical investment research question:
@@ -375,3 +387,5 @@ Current limitations:
 - Add richer feature selection and hyperparameter search
 - Add covariance/risk-model-aware portfolio optimization
 - Add artifact uploads for scheduled ETL outputs
+
+Free data integration: [SimFin conversion and cached Tiingo downloads](docs/data-contract.md#free-provider-conversion-and-download) now have CLI workflows and offline regression tests. Real historical membership and capitalization inputs are still required.

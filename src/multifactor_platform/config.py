@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     yfinance_period: str = "10y"
     yfinance_universe_limit: int = 100
     yfinance_batch_size: int = 25
+    point_in_time_dataset: str | None = None
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="MFP_")
 

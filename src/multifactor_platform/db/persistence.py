@@ -232,6 +232,12 @@ def persist_backtest(session: Session, source: DataSource, result: dict) -> int:
 
 
 def persist_pipeline_snapshot(source: DataSource = "sample", database_url: str | None = None) -> dict[str, int | str]:
+    if source == "point_in_time":
+        from multifactor_platform.research import ResearchDataError
+        raise ResearchDataError(
+            "Point-in-time inputs use immutable research archives. The legacy snapshot database "
+            "cannot preserve revision histories; use the backtest job to archive a run."
+        )
     initialize_database(database_url)
     prices, features, rankings = load_platform_data(source)
     backtest = run_top_n_backtest(rankings, prices, n=10)

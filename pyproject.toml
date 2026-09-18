@@ -29,6 +29,9 @@ dev = [
 ]
 
 [project.scripts]
+mfp-convert-simfin = "multifactor_platform.jobs.convert_simfin:main"
+mfp-download-tiingo = "multifactor_platform.jobs.download_tiingo:main"
+mfp-import-point-in-time = "multifactor_platform.jobs.import_point_in_time:main"
 mfp-ingest-prices = "multifactor_platform.jobs.ingest_prices:main"
 mfp-compute-features = "multifactor_platform.jobs.compute_features:main"
 mfp-run-backtest = "multifactor_platform.jobs.run_backtest:main"

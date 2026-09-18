@@ -108,6 +108,8 @@ def validate_price_history(prices: pd.DataFrame, source: str) -> DataQualityRepo
             "Current yfinance fundamentals are applied as a snapshot, so historical backtests are not research-grade."
         )
 
+    if source == "point_in_time":
+        warnings.append("Point-in-time schema checks do not certify provider coverage or corporate-action accuracy.")
     start = pd.to_datetime(prices["date"]).min()
     end = pd.to_datetime(prices["date"]).max()
     return DataQualityReport(

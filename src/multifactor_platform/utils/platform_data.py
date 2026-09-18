@@ -15,7 +15,7 @@ from multifactor_platform.ingestion.yfinance_client import (
 )
 from multifactor_platform.models.ranker import rank_stocks
 
-DataSource = Literal["sample", "yfinance"]
+DataSource = Literal["sample", "yfinance", "point_in_time"]
 
 MIN_RANKING_COLUMNS = [
     "momentum_12m_ex_1m_z",
@@ -99,4 +99,14 @@ def load_platform_data(source: DataSource = "sample"):
         return load_sample_platform_data()
     if source == "yfinance":
         return load_yfinance_platform_data()
+    if source == "point_in_time":
+        from multifactor_platform.ingestion.point_in_time import build_point_in_time_data
+        from multifactor_platform.research import ResearchDataError
+        path = get_settings().point_in_time_dataset
+        if not path:
+            raise ResearchDataError("Import a point-in-time packet and set MFP_POINT_IN_TIME_DATASET to its archive path")
+        try:
+            return build_point_in_time_data(path)
+        except (OSError, KeyError, ValueError) as exc:
+            raise ResearchDataError(f"Point-in-time dataset unavailable or invalid: {exc}") from exc
     raise ValueError(f"Unknown data source: {source}")

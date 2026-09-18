@@ -8,7 +8,7 @@ from multifactor_platform.utils.platform_data import DataSource
 def add_source_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--source",
-        choices=["sample", "yfinance"],
+        choices=["sample", "yfinance", "point_in_time"],
         default="sample",
         help="Data source to run through the pipeline.",
     )
@@ -23,7 +23,7 @@ def add_database_argument(parser: argparse.ArgumentParser) -> None:
 
 
 def parse_source(value: str) -> DataSource:
-    if value not in {"sample", "yfinance"}:
+    if value not in {"sample", "yfinance", "point_in_time"}:
         raise ValueError(f"Unsupported source: {value}")
     return value  # type: ignore[return-value]
 

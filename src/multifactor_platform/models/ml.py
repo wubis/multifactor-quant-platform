@@ -52,10 +52,15 @@ def add_forward_return_target(
         raise ValueError("horizon_days must be positive")
     output = features.sort_values(["ticker", "date"]).copy()
     grouped = output.groupby("ticker")
-    output["next_21d_return"] = (
-        grouped["adj_close"].shift(-horizon_days) / output["adj_close"] - 1
-    )
-    output[LABEL_END_COLUMN] = grouped["date"].shift(-horizon_days)
+    if horizon_days == 21 and {"forward_price_21d", "forward_end_21d"}.issubset(output.columns):
+        # Imported PIT inputs carry targets computed before eligibility filtering.
+        output["next_21d_return"] = output["forward_price_21d"] / output["adj_close"] - 1
+        output[LABEL_END_COLUMN] = output["forward_end_21d"]
+    else:
+        output["next_21d_return"] = (
+            grouped["adj_close"].shift(-horizon_days) / output["adj_close"] - 1
+        )
+        output[LABEL_END_COLUMN] = grouped["date"].shift(-horizon_days)
     # The relative target is available only when all constituent returns are known.
     output[LABEL_END_COLUMN] = output.groupby("date")[LABEL_END_COLUMN].transform("max")
     output[target_column] = output["next_21d_return"] - output.groupby("date")[

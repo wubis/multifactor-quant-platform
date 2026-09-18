@@ -16,7 +16,7 @@ import {
 import "./styles.css";
 
 type View = "overview" | "backtests" | "models" | "risk";
-type DataSource = "yfinance" | "sample";
+type DataSource = "yfinance" | "sample" | "point_in_time";
 
 type Ranking = {
   ticker: string;
@@ -908,6 +908,7 @@ function App() {
             <select value={source} onChange={(event) => setSource(event.target.value as DataSource)}>
               <option value="yfinance">yfinance</option>
               <option value="sample">sample</option>
+              <option value="point_in_time">Point-in-time import</option>
             </select>
             <select
               value={selectedBacktestId || ""}

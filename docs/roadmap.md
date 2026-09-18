@@ -32,6 +32,21 @@ Implemented:
 
 Accounting scope: holdings use **adjusted total-return units**, not raw executable shares. Corporate actions are embedded in adjusted prices; there is no independent event ledger for dividends, splits, mergers, or delistings. Cash rates are configurable constants, not a historical rate feed. Daily observations use the supplied price calendar; complete vendor-wide missing sessions still require an independent exchange-calendar audit.
 
+## Point-in-time import milestone
+
+Implemented the provider-independent `point_in_time` source with publication,
+availability, fiscal-period and revision checks; effective-and-known membership
+states; historical valuation inputs; and universe filtering before normalization.
+Forward targets are calculated from full price histories on benchmark session dates
+before membership filtering, so an exit does not truncate an otherwise observable
+21-session label. The target still needs alignment to the actual execution horizon.
+
+The project now has a **$0 data constraint** and targets SimFin free fundamentals plus
+Tiingo Starter prices. Local-record boundary helpers preserve Tiingo price bases and
+gate SimFin values after their later publication/restatement day. No paid fallback or
+live download is enabled. See [the data contract](data-contract.md) for the remaining
+real-data conversion, historical coverage, shares-basis, and quota work.
+
 ## Next research work
 
 1. Obtain point-in-time fundamentals and historically eligible securities with corporate-action/delisting records. Keep historical yfinance multifactor research disabled until appropriate inputs exist.
@@ -50,3 +65,7 @@ Accounting scope: holdings use **adjusted total-return units**, not raw executab
 - Remove placeholder quality inputs; standardize accounting units and valuation treatment.
 - Add covariance-aware portfolio construction and actual beta/sector constraints. The current allocator does not enforce its informational beta target and reports that limitation.
 - Freeze a research configuration before paper trading; reconcile predictions, orders, positions, and realized costs. Paper trading is an operational validation step, not proof of alpha.
+
+### Free provider adapters
+
+Implemented quarterly SimFin conversion with amendment-aware TTM states and raw provenance, plus cached Tiingo EOD downloads with persistent free-tier budgets. Offline regression tests cover availability, incomplete histories, caching and quota stops. Next: validate actual free exports and assemble historical membership and capitalization evidence before a real-data research run.
